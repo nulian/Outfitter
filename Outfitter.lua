@@ -1377,7 +1377,6 @@ function Outfitter:UpdateCurrentOutfitIcon()
 	if type(vTexture) == "number" then
 		vTexture = 	self:ConvertTextureIDToPath(vTexture)
 	end
-	SetPortraitToTexture(OutfitterMinimapButton.CurrentOutfitTexture, vTexture)
 end
 
 function Outfitter:BankFrameOpened()
@@ -2338,9 +2337,9 @@ function Outfitter:SetShowMinimapButton(pShowButton)
 	self.Settings.Options.HideMinimapButton = not pShowButton
 
 	if self.Settings.Options.HideMinimapButton then
-		OutfitterMinimapButton:Hide()
+		Outfitter.LDB:HideIcon()
 	else
-		OutfitterMinimapButton:Show()
+		Outfitter.LDB:ShowIcon()
 	end
 
 	self:Update(false)
@@ -4761,23 +4760,7 @@ function Outfitter:Initialize()
 		end
 	end
 
-	-- Set the minimap button
-	if self.Settings.Options.HideMinimapButton then
-		OutfitterMinimapButton:Hide()
-	else
-		OutfitterMinimapButton:Show()
-	end
-
-	if not self.Settings.Options.MinimapButtonAngle
-	and not self.Settings.Options.MinimapButtonX then
-		self.Settings.Options.MinimapButtonAngle = -1.5708
-	end
-
-	if self.Settings.Options.MinimapButtonAngle then
-		OutfitterMinimapButton:SetPositionAngle(self.Settings.Options.MinimapButtonAngle)
-	else
-		OutfitterMinimapButton:SetPosition(self.Settings.Options.MinimapButtonX, self.Settings.Options.MinimapButtonY)
-	end
+    Outfitter.LDB:CreateIcon(self.Settings.Options.HideMinimapButton)
 
 	-- Move the Blizzard UI over a bit
 	PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrameInsetRight, "TOPRIGHT", -30, -1)
