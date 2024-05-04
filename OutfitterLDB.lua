@@ -15,10 +15,10 @@ function Outfitter.LDB:Initialize()
 	Outfitter:RegisterOutfitEvent("OUTFITTER_INIT", function (...) self:OutfitEvent(...) end)
 end
 
-function Outfitter.LDB:CreateIcon(hideMinimapButton)
+function Outfitter.LDB:CreateIcon(minimapButton)
     self.icon = LibStub("LibDBIcon-1.0")
 
-    self.icon:Register(Outfitter.cTitle, self.DataObj, { hide = hideMinimapButton })
+    self.icon:Register(Outfitter.cTitle, self.DataObj, minimapButton)
 end
 
 function Outfitter.LDB:ShowIcon()

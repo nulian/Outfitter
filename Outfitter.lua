@@ -2334,9 +2334,9 @@ function Outfitter:SetShowItemComparisons(pShowComparisons)
 end
 
 function Outfitter:SetShowMinimapButton(pShowButton)
-	self.Settings.Options.HideMinimapButton = not pShowButton
+	self.Settings.Options.MinimapButton.hide = not pShowButton
 
-	if self.Settings.Options.HideMinimapButton then
+	if self.Settings.Options.MinimapButton.hide then
 		Outfitter.LDB:HideIcon()
 	else
 		Outfitter.LDB:ShowIcon()
@@ -2849,7 +2849,7 @@ function Outfitter:Update(pOutfitsChanged)
 				0, 0)                           -- smallHighlightWidth, bigHighlightWidth
 	elseif self.CurrentPanel == 2 then -- Options panel
 		OutfitterAutoSwitch:SetChecked(self.Settings.Options.DisableAutoSwitch)
-		OutfitterShowMinimapButton:SetChecked(not self.Settings.Options.HideMinimapButton)
+		OutfitterShowMinimapButton:SetChecked(not self.Settings.Options.MinimapButton.hide)
 		OutfitterTooltipInfo:SetChecked(not self.Settings.Options.DisableToolTipInfo)
 		OutfitterShowHotkeyMessages:SetChecked(not self.Settings.Options.DisableHotkeyMessages)
 		OutfitterShowOutfitBar:SetChecked(self.Settings.OutfitBar.ShowOutfitBar)
@@ -4760,7 +4760,11 @@ function Outfitter:Initialize()
 		end
 	end
 
-    Outfitter.LDB:CreateIcon(self.Settings.Options.HideMinimapButton)
+    if not self.Settings.Options.MinimapButton then
+      self.Settings.Options.MinimapButton = {}
+    end
+
+    Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
 
 	-- Move the Blizzard UI over a bit
 	PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrameInsetRight, "TOPRIGHT", -30, -1)
@@ -4946,7 +4950,7 @@ function Outfitter:InitializeSettings()
 	gOutfitter_Settings =
 	{
 		Version = 22,
-		Options = {},
+		Options = { MinimapButton = {}},
 		LastOutfitStack = {},
 		LayerIndex = {},
 		RecentCompleteOutfits = {},
