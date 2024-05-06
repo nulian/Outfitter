@@ -16,7 +16,7 @@ function Outfitter.LDB:Initialize()
 end
 
 function Outfitter.LDB:CreateIcon(minimapButton)
-    self.icon = LibStub("LibDBIcon-1.0")
+    self.icon = LibStub("LibWithFreeDragDBIcon-1.0")
 
     self.icon:Register(Outfitter.cTitle, self.DataObj, minimapButton)
 end

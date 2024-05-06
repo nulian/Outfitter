@@ -1,7 +1,7 @@
 ## Interface: 100206
 ## Author: John Stephen
 ## Title: Outfitter
-## Version: 10.2.6.2
+## Version: 10.2.6.3
 ## Notes: Clothing and weapon management and automated equipment changes
 ## OptionalDeps:
 ## RequiredDeps:
@@ -19,7 +19,7 @@ Libraries/UTF8/utf8.lua
 Libraries/LibStub.lua
 Libraries/CallbackHandler-1.0.lua
 Libraries/LibDataBroker-1.1.lua
-Libraries/LibDBIcon-1.0.lua
+Libraries/LibWithFreeDragDBIcon-1.0.lua
 Libraries/LibBabble-3.0.lua
 Libraries/LibBabble-SubZone-3.0.lua
 Libraries/LibBabble-Inventory-3.0.lua

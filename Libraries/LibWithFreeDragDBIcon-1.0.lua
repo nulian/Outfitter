@@ -1,11 +1,11 @@
 --@curseforge-project-slug: libdbicon-1-0@
 -----------------------------------------------------------------------
--- LibDBIcon-1.0
+-- LibWithFreeDragDBIcon-1.0
 --
--- Allows addons to easily create a lightweight minimap icon as an alternative to heavier LDB displays.
+-- Customized version of LibDBIcon to support free drag mode.
 --
 
-local DBICON10 = "LibDBIcon-1.0"
+local DBICON10 = "LibWithFreeDragDBIcon-1.0"
 local DBICON10_MINOR = 52 -- Bump on changes
 if not LibStub then error(DBICON10 .. " requires LibStub.") end
 local ldb = LibStub("LibDataBroker-1.1", true)
@@ -18,7 +18,7 @@ lib.callbackRegistered = lib.callbackRegistered or nil
 lib.callbacks = lib.callbacks or LibStub("CallbackHandler-1.0"):New(lib)
 lib.radius = lib.radius or 5
 local next, Minimap, CreateFrame, AddonCompartmentFrame = next, Minimap, CreateFrame, AddonCompartmentFrame
-lib.tooltip = lib.tooltip or CreateFrame("GameTooltip", "LibDBIconTooltip", UIParent, "GameTooltipTemplate")
+lib.tooltip = lib.tooltip or CreateFrame("GameTooltip", "LibWithFreeDragDBIconTooltip", UIParent, "GameTooltipTemplate")
 local isDraggingButton = false
 
 function lib:IconCallback(event, name, key, value)
@@ -145,23 +145,27 @@ do
 
 	local rad, cos, sin, sqrt, max, min = math.rad, math.cos, math.sin, math.sqrt, math.max, math.min
 	function updatePosition(button, position)
-		local angle = rad(position or 225)
-		local x, y, q = cos(angle), sin(angle), 1
-		if x < 0 then q = q + 1 end
-		if y > 0 then q = q + 2 end
-		local minimapShape = GetMinimapShape and GetMinimapShape() or "ROUND"
-		local quadTable = minimapShapes[minimapShape]
-		local w = (Minimap:GetWidth() / 2) + lib.radius
-		local h = (Minimap:GetHeight() / 2) + lib.radius
-		if quadTable[q] then
-			x, y = x*w, y*h
+            if type(position) == "number" then
+            local angle = rad(position or 225)
+            local x, y, q = cos(angle), sin(angle), 1
+            if x < 0 then q = q + 1 end
+            if y > 0 then q = q + 2 end
+            local minimapShape = GetMinimapShape and GetMinimapShape() or "ROUND"
+            local quadTable = minimapShapes[minimapShape]
+            local w = (Minimap:GetWidth() / 2) + lib.radius
+            local h = (Minimap:GetHeight() / 2) + lib.radius
+            if quadTable[q] then
+                x, y = x*w, y*h
+            else
+                local diagRadiusW = sqrt(2*(w)^2)-10
+                local diagRadiusH = sqrt(2*(h)^2)-10
+                x = max(-w, min(x*diagRadiusW, w))
+                y = max(-h, min(y*diagRadiusH, h))
+            end
+		    button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 		else
-			local diagRadiusW = sqrt(2*(w)^2)-10
-			local diagRadiusH = sqrt(2*(h)^2)-10
-			x = max(-w, min(x*diagRadiusW, w))
-			y = max(-h, min(y*diagRadiusH, h))
+		    button:SetPoint("CENTER", Minimap, "CENTER", position['x'], position['y'])
 		end
-		button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 	end
 end
 
@@ -173,6 +177,17 @@ end
 
 local function onMouseDown(self)
 	self.isMouseDown = true
+	self.enableFreeDrag = IsModifierKeyDown()
+	local px, py = GetCursorPosition()
+	local scale = Minimap:GetEffectiveScale()
+	px, py = px / scale, py / scale
+	self.cursorStartX = px
+	self.cursorStartY = py
+	local vCenterX, vCenterY = self:GetCenter()
+    local vMinimapCenterX, vMinimapCenterY = Minimap:GetCenter()
+
+    self.centerStartX = vCenterX - vMinimapCenterX
+    self.centerStartY = vCenterY - vMinimapCenterY
 	self.icon:UpdateCoord()
 end
 
@@ -184,19 +199,37 @@ end
 do
 	local deg, atan2 = math.deg, math.atan2
 	local function onUpdate(self)
-		local mx, my = Minimap:GetCenter()
 		local px, py = GetCursorPosition()
-		local scale = Minimap:GetEffectiveScale()
-		px, py = px / scale, py / scale
-		local pos = 225
-		if self.db then
-			pos = deg(atan2(py - my, px - mx)) % 360
-			self.db.minimapPos = pos
+		if self.enableFreeDrag then
+		    local scale = Minimap:GetEffectiveScale()
+		    px, py = px / scale, py / scale
+		    local vCursorDeltaX = px - self.cursorStartX
+            local vCursorDeltaY = py - self.cursorStartY
+
+
+            local vCenterX = self.centerStartX + vCursorDeltaX
+            local vCenterY = self.centerStartY + vCursorDeltaY
+            local coords = { x = vCenterX, y = vCenterY }
+		    if self.db then
+              self.db.minimapPos = coords
+            else
+              self.minimapPos = coords
+            end
+		    updatePosition(self, coords)
 		else
-			pos = deg(atan2(py - my, px - mx)) % 360
-			self.minimapPos = pos
+            local mx, my = Minimap:GetCenter()
+            local scale = Minimap:GetEffectiveScale()
+            px, py = px / scale, py / scale
+            local pos = 225
+            if self.db then
+                pos = deg(atan2(py - my, px - mx)) % 360
+                self.db.minimapPos = pos
+            else
+                pos = deg(atan2(py - my, px - mx)) % 360
+                self.minimapPos = pos
+            end
+            updatePosition(self, pos)
 		end
-		updatePosition(self, pos)
 	end
 
 	function onDragStart(self)
@@ -240,7 +273,7 @@ local function updateCoord(self)
 end
 
 local function createButton(name, object, db, customCompartmentIcon)
-	local button = CreateFrame("Button", "LibDBIcon10_"..name, Minimap)
+	local button = CreateFrame("Button", "LibWithFreeDragDBIcon10_"..name, Minimap)
 	button.dataObject = object
 	button.db = db
 	button:SetFrameStrata("MEDIUM")
@@ -321,7 +354,7 @@ local function createButton(name, object, db, customCompartmentIcon)
 	if db and db.showInCompartment then
 		lib:AddButtonToCompartment(name, customCompartmentIcon)
 	end
-	lib.callbacks:Fire("LibDBIcon_IconCreated", button, name) -- Fire 'Icon Created' callback
+	lib.callbacks:Fire("LibWithFreeDragDBIcon_IconCreated", button, name) -- Fire 'Icon Created' callback
 end
 
 -- Wait a bit with the initial positioning to let any GetMinimapShape addons
