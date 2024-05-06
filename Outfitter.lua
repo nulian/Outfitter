@@ -4761,7 +4761,7 @@ function Outfitter:Initialize()
 	end
 
     if not self.Settings.Options.MinimapButton then
-      self.Settings.Options.MinimapButton = {}
+      self.Settings.Options.MinimapButton = { hide = self.Settings.Options.HideMinimapButton}
     end
 
     Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
