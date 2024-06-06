@@ -3661,7 +3661,7 @@ function Outfitter:GetBagType(pBagIndex)
 		return nil
 	end
 
-	return GetItemFamily(vItemLink)
+	return C_Item.GetItemFamily(vItemLink)
 end
 
 function Outfitter:GetEmptyBagSlot(pStartBagIndex, pStartBagSlotIndex, pIncludeBank)
@@ -4147,7 +4147,7 @@ function Outfitter:GetPlayerAuraStates()
 	end
 
 	while true do
-		local vName, _, vTexture, _, _, _, _, _, _, _, vSpellID = UnitBuff("player", vBuffIndex)
+		local vName, _, vTexture, _, _, _, _, _, _, _, vSpellID = C_UnitAuras.GetAuraDataByIndex("PLAYER", vBuffIndex)
 
 		if not vName then
 			return self.AuraStates
@@ -4465,7 +4465,7 @@ function Outfitter:GetCurrentZoneIDs(pRecycleTable)
 		vZoneSpecialIDMap = self.cZoneSpecialIDMap[GetRealZoneText()]
 	end
 
-	local vPVPType, vIsArena, vFactionName = GetZonePVPInfo()
+	local vPVPType, vIsArena, vFactionName = C_PvP.GetZonePVPInfo()
 
 	if vZoneSpecialIDMap then
 		for _, vZoneSpecialID in ipairs(vZoneSpecialIDMap) do
@@ -4656,7 +4656,7 @@ function Outfitter:Initialize()
 	end
 
 	-- Make sure they're not upgrading with a reloadui when there are new files
-	if tonumber(GetAddOnMetadata("Outfitter", "X-ReloadTag")) ~= 2 then
+	if tonumber(C_AddOns.GetAddOnMetadata("Outfitter", "X-ReloadTag")) ~= 2 then
 		OutfitterMinimapButton:Hide() -- Remove access to Outfitter so more errors don't start coming up
 		OutfitterButtonFrame:Hide()
 		StaticPopup_Show("OUTFITTER_CANT_RELOADUI")
@@ -7159,7 +7159,7 @@ function Outfitter:GenerateItemLink(pItem)
 		return
 	end
 
-	local _, _, vQuality = GetItemInfo(pItem.Code)
+	local _, _, vQuality = C_Item.GetItemInfo(pItem.Code)
 	if pItem.Quality then vQuality = pItem.Quality end
 	local _, _, _, vQualityColorCode = GetItemQualityColor(vQuality or 1)
 
@@ -7307,7 +7307,7 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 	      vTooltipItemType,
 	      vTooltipItemSubType,
 	      vTooltipItemCount,
-	      vTooltipItemInvType = GetItemInfo(vTooltipItemCodes[1])
+	      vTooltipItemInvType = C_Item.GetItemInfo(vTooltipItemCodes[1])
 
 	if not vTooltipItemInvType or vTooltipItemType ~= "Armor" then
 		return
