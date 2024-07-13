@@ -7161,7 +7161,7 @@ function Outfitter:GenerateItemLink(pItem)
 
 	local _, _, vQuality = C_Item.GetItemInfo(pItem.Code)
 	if pItem.Quality then vQuality = pItem.Quality end
-	local _, _, _, vQualityColorCode = GetItemQualityColor(vQuality or 1)
+	local _, _, _, vQualityColorCode = C_Item.GetItemQualityColor(vQuality or 1)
 
 	return string.format("|c%s|Hitem:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%s%s|h[%s]|h|r", vQualityColorCode, pItem.Code, pItem.EnchantCode or 0, pItem.JewelCode1 or 0, pItem.JewelCode2 or 0, pItem.JewelCode3 or 0, pItem.JewelCode4 or 0, pItem.SubCode or 0, pItem.UniqueID or 0, pItem.LinkLevel or 0, 0, pItem.UpgradeTypeID or 0, pItem.InstanceDifficultyID or 0, pItem.BonusIDs or "::", (pItem.UpgradeItemType and pItem.UpgradeItemType ~= 0) and (":"..pItem.UpgradeID) or "", pItem.Name or "unknown"), vQuality or 1
 end
@@ -7236,7 +7236,7 @@ function Outfitter:GetTrackingEnabled(pTexture)
 
 	for vIndex = 1, vNumTypes do
 		local vName, vTexture, vActive = OutfitterAPI:GetTrackingInfo(vIndex)
-		if vTexture == pTexture then
+        if vTexture == pTexture then
 			return vActive, vIndex
 		end
 	end
