@@ -145,7 +145,9 @@ do
 
 	local rad, cos, sin, sqrt, max, min = math.rad, math.cos, math.sin, math.sqrt, math.max, math.min
 	function updatePosition(button, position)
-            if type(position) == "number" then
+        if type(position) == "table" then
+		    button:SetPoint("CENTER", Minimap, "CENTER", position['x'], position['y'])
+		else
             local angle = rad(position or 225)
             local x, y, q = cos(angle), sin(angle), 1
             if x < 0 then q = q + 1 end
@@ -163,8 +165,6 @@ do
                 y = max(-h, min(y*diagRadiusH, h))
             end
 		    button:SetPoint("CENTER", Minimap, "CENTER", x, y)
-		else
-		    button:SetPoint("CENTER", Minimap, "CENTER", position['x'], position['y'])
 		end
 	end
 end
@@ -281,7 +281,7 @@ local function createButton(name, object, db, customCompartmentIcon)
 	button:SetFrameLevel(8)
 	button:SetFixedFrameLevel(true)
 	button:SetSize(31, 31)
-	button:RegisterForClicks("anyUp")
+	button:RegisterForClicks("AnyUp")
 	button:RegisterForDrag("LeftButton")
 	button:SetHighlightTexture(136477) --"Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
 	if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then
