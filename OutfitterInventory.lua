@@ -22,7 +22,7 @@ function Outfitter:FindNextCooldownItem(pItemCodes, pIgnoreSwapCooldown)
 				local vStart, vDuration, vEnabled
 
 				if vItemInfo.Location.BagIndex then
-					vStart, vDuration, vEnabled = GetContainerItemCooldown(vItemInfo.Location.BagIndex, vItemInfo.Location.BagSlotIndex)
+					vStart, vDuration, vEnabled = C_Container.GetContainerItemCooldown(vItemInfo.Location.BagIndex, vItemInfo.Location.BagSlotIndex)
 				elseif vItemInfo.Location.SlotID then
 					vStart, vDuration, vEnabled = GetInventoryItemCooldown("player", vItemInfo.Location.SlotID)
 				end
@@ -114,7 +114,7 @@ function Outfitter:GetItemLocationLink(pItemLocation)
 	if pItemLocation.BagIndex then
 		return OutfitterAPI:GetContainerItemLink(pItemLocation.BagIndex, pItemLocation.BagSlotIndex)
 	elseif pItemLocation.SlotName then
-		return self:GetInventorySlotIDLink(pSlotID)
+		return self:GetInventorySlotIDLink(GetInventorySlotInfo(pItemLocation.SlotName))
 	else
 		self:ErrorMessage("Unknown location in GetItemLocationLink")
 		return
@@ -1004,7 +1004,7 @@ function Outfitter._InventoryCache:FindItemIndex(pOutfitItem, pAllowSubCodeWildc
 
 	-- Return the match if only one item was found
 
-	if vNumItemsFound == 1
+	if vNumItemsFound == 1 and vBestMatch
 	and not vBestMatch.IgnoreItem then
 		return vBestMatch, vBestMatchIndex, vItemFamily, nil
 	end

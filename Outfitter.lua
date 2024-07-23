@@ -2934,7 +2934,7 @@ function Outfitter:FindOutfitItemIndex(pOutfit)
 end
 
 function Outfitter:WearOutfitByName(pOutfitName, pLayerID)
-	vOutfit = self:FindOutfitByName(pOutfitName)
+	local vOutfit = self:FindOutfitByName(pOutfitName)
 
 	if not vOutfit then
 		self:ErrorMessage("Couldn't find outfit named %s", pOutfitName)
@@ -2945,7 +2945,7 @@ function Outfitter:WearOutfitByName(pOutfitName, pLayerID)
 end
 
 function Outfitter:RemoveOutfitByName(pOutfitName, pLayerID)
-	vOutfit = self:FindOutfitByName(pOutfitName)
+	local vOutfit = self:FindOutfitByName(pOutfitName)
 
 	if not vOutfit then
 		self:ErrorMessage("Couldn't find outfit named %s", pOutfitName)
@@ -3297,7 +3297,7 @@ function Outfitter:WearBoundOutfit(pBindingIndex)
 						UIErrorsFrame:AddMessage(format(self.cEquipOutfitMessageFormat, vOutfit:GetName()), self.OUTFIT_MESSAGE_COLOR.r, self.OUTFIT_MESSAGE_COLOR.g, self.OUTFIT_MESSAGE_COLOR.b)
 					end
 				else
-					local vEquipped = self:ToggleOutfitNow(vOutfit, vCategoryID)
+					local vEquipped = self:ToggleOutfitNow(vOutfit)
 
 					if not self.Settings.Options.DisableHotkeyMessages then
 						if vEquipped then
@@ -4621,7 +4621,7 @@ function Outfitter:FindMultipleItemLocation(pItems, pInventoryCache)
 end
 
 function Outfitter:FindAndAddItemsToOutfit(pOutfit, pSlotName, pItems, pInventoryCache)
-	vItemLocation, vItem = self:FindMultipleItemLocation(pItems, pInventoryCache)
+	local vItemLocation, vItem = self:FindMultipleItemLocation(pItems, pInventoryCache)
 
 	if vItemLocation then
 		local vInventorySlot = pSlotName
@@ -5150,7 +5150,7 @@ end
 
 function Outfitter:CreateEmptySpecialOccasionOutfit(pScriptID, pName, pAllowDuplicates)
 	-- Return the existing outfit if duplicates aren't allowed
-	vOutfit = self:GetOutfitByName(pName)
+	local vOutfit = self:GetOutfitByName(pName)
 	if vOutfit and not pAllowDuplicates then
 		-- Assign the script to the existing outfit if there isn't one already
 		if not vOutfit.ScriptID then
@@ -5631,7 +5631,7 @@ function Outfitter._NameOutfitDialog:Update(pCheckForStatOutfit)
 
 		if vStat
 		and not vStat.Complex then -- Don't attempt to test for iterative outfits
-			vOutfit = Outfitter:GenerateSmartOutfit("temp outfit", vStat, Outfitter:GetInventoryCache())
+			local vOutfit = Outfitter:GenerateSmartOutfit("temp outfit", vStat, Outfitter:GetInventoryCache())
 			if not vOutfit
 			or vOutfit:IsEmpty() then
 				vErrorMessage = Outfitter.cNoItemsWithStatError
@@ -5778,7 +5778,7 @@ function Outfitter._RebuildOutfitDialog:Update(pCheckForStatOutfit)
 
 		if vStat
 		and not vStat.Complex then -- Don't attempt to test for iterative outfits
-			vOutfit = Outfitter:GenerateSmartOutfit("temp outfit", vStat, Outfitter:GetInventoryCache())
+			local vOutfit = Outfitter:GenerateSmartOutfit("temp outfit", vStat, Outfitter:GetInventoryCache())
 			if not vOutfit
 			or vOutfit:IsEmpty() then
 				vErrorMessage = Outfitter.cNoItemsWithStatError
@@ -6034,7 +6034,7 @@ function Outfitter.OutfitItemSelected(dropdown, item)
 	local outfit = Outfitter:GetOutfitFromDropdown(dropdown)
 
 	if not outfit then
-		Outfitter:ErrorMessage("Outfit for menu item "..tostring(pItem.name).." not found")
+		Outfitter:ErrorMessage("Outfit for menu item "..tostring(item.name).." not found")
 		return
 	end
 
@@ -6373,7 +6373,7 @@ function Outfitter:DepositOutfit(pOutfit, pUniqueItemsOnly)
 	local vNumChanges = #vEquipmentChangeList
 
 	while vChangeIndex <= vNumChanges do
-		vEquipmentChange = vEquipmentChangeList[vChangeIndex]
+		local vEquipmentChange = vEquipmentChangeList[vChangeIndex]
 
 		if self:IsBankBagIndex(vEquipmentChange.FromLocation.BagIndex) then
 			table.remove(vEquipmentChangeList, vChangeIndex)
@@ -6470,7 +6470,7 @@ function Outfitter:WithdrawOutfit(pOutfit)
 	local vNumChanges = #vEquipmentChangeList
 
 	while vChangeIndex <= vNumChanges do
-		vEquipmentChange = vEquipmentChangeList[vChangeIndex]
+		local vEquipmentChange = vEquipmentChangeList[vChangeIndex]
 
 		if not self:IsBankBagIndex(vEquipmentChange.FromLocation.BagIndex) then
 			table.remove(vEquipmentChangeList, vChangeIndex)
@@ -6486,7 +6486,7 @@ function Outfitter:WithdrawOutfit(pOutfit)
 
 	-- Execute the changes
 
-	vEquipmentChangeList:execute(vEmptyBagSlots, vExpectedInventoryCache)
+	vEquipmentChangeList:execute(vEmptyBagSlots, vInventoryCache)
 
 	self:DispatchOutfitEvent("EDIT_OUTFIT", pOutfit:GetName(), pOutfit)
 end
@@ -7098,7 +7098,7 @@ function Outfitter:InventoryItemIsActive(pInventorySlot)
 	local vSlotID = self.cSlotIDs[pInventorySlot]
 	local vItemLink = self:GetInventorySlotIDLink(vSlotID)
 	local vItemCode = self:GetSlotIDLinkInfo(vSlotID)[1]
-	local vStartTime, vDuration, vEnable = GetItemCooldown(vItemCode)
+	local vStartTime, vDuration, vEnable = C_Item.GetItemCooldown(vItemCode)
 
 	if not vStartTime or vStartTime == 0 then
 		return false
@@ -7212,7 +7212,7 @@ function Outfitter:CallCompanionByName(pName)
 end
 
 function Outfitter:PlayerIsOnQuestID(pQuestID)
-	local vNumQuests = GetNumQuestLogEntries()
+	local vNumQuests = C_QuestLog.GetNumQuestLogEntries()
 
 	for vQuestIndex = 1, vNumQuests do
 		local vQuestLink = GetQuestLink(vQuestIndex)
@@ -7258,10 +7258,10 @@ function Outfitter._ExtendedCompareTooltip:Construct()
 		if not Outfitter.Settings.Options.DisableItemComparisons then
 			if OutfitterAPI.IsWoW1002 then
 				if TooltipUtil.ShouldDoItemComparison() then
-					self:ShowCompareItem(pShift)
+					self:ShowCompareItem()
 				end
 			else
-				self:ShowCompareItem(pShift)
+				self:ShowCompareItem()
 			end
 		end
 	end)
