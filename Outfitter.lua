@@ -4642,6 +4642,16 @@ function Outfitter:InitializationCheck()
 	-- Don't initialize for a short time after WoW comes up to allow
 	-- time for WoW to load inventory, bags, talent trees, etc.
 
+	self:InitializeInstant()
+
+	self.SchedulerLib:RescheduleTask(1, self.Initialize, self)
+end
+
+function Outfitter:InitializeInstant()
+	if self.Initialized then
+		return
+	end
+
 	-- Initialize the global settings if they didn't get loaded
     if not gOutfitter_GlobalSettings then
         self:InitializeGlobalSettings()
@@ -4658,9 +4668,10 @@ function Outfitter:InitializationCheck()
           self.Settings.Options.MinimapButton = { hide = self.Settings.Options.HideMinimapButton}
     end
 
-    Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
-
-	self.SchedulerLib:RescheduleTask(1, self.Initialize, self)
+	if not self.minimapCreated then
+    	Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
+		self.minimapCreated = true
+	end
 end
 
 function Outfitter:Initialize()
