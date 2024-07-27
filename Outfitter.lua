@@ -4648,7 +4648,7 @@ function Outfitter:InitializationCheck()
 end
 
 function Outfitter:InitializeInstant()
-	if self.Initialized then
+	if self.InitializedInstant then
 		return
 	end
 
@@ -4668,10 +4668,9 @@ function Outfitter:InitializeInstant()
           self.Settings.Options.MinimapButton = { hide = self.Settings.Options.HideMinimapButton}
     end
 
-	if not self.minimapCreated then
-    	Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
-		self.minimapCreated = true
-	end
+	Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
+
+	self.InitializedInstant = true
 end
 
 function Outfitter:Initialize()
