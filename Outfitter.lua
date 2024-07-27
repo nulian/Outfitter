@@ -6122,8 +6122,9 @@ function Outfitter:ToggleUI(pToggleCharWindow)
 end
 
 function Outfitter:OpenUI()
+	CharacterFrame:ShowSubFrame("PaperDollFrame")
 	ShowUIPanel(CharacterFrame)
-	CharacterFrame_ShowSubFrame("PaperDollFrame")
+	CharacterFrame:RefreshDisplay()
 	OutfitterFrame:Show()
 end
 
