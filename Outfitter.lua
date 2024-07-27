@@ -4642,6 +4642,24 @@ function Outfitter:InitializationCheck()
 	-- Don't initialize for a short time after WoW comes up to allow
 	-- time for WoW to load inventory, bags, talent trees, etc.
 
+	-- Initialize the global settings if they didn't get loaded
+    if not gOutfitter_GlobalSettings then
+        self:InitializeGlobalSettings()
+    end
+
+    -- Initialize the settings
+    if not gOutfitter_Settings then
+        self:InitializeSettings()
+    else
+        self.Settings = gOutfitter_Settings
+    end
+
+    if not self.Settings.Options.MinimapButton then
+          self.Settings.Options.MinimapButton = { hide = self.Settings.Options.HideMinimapButton}
+    end
+
+    Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
+
 	self.SchedulerLib:RescheduleTask(1, self.Initialize, self)
 end
 
@@ -4672,11 +4690,6 @@ function Outfitter:Initialize()
 	-- Swap in the Horde Lance for the Alliance Lance mapping
 	if UnitFactionGroup("player") == "Horde" then
 		Outfitter.cItemAliases[46106] = 46070 -- Argent Lance -> Horde Lance
-	end
-
-	-- Initialize the global settings if they didn't get loaded
-	if not gOutfitter_GlobalSettings then
-		self:InitializeGlobalSettings()
 	end
 
 	-- Refuse to load for select characters
@@ -4722,13 +4735,6 @@ function Outfitter:Initialize()
 	-- Initialize the scripts
 	Outfitter:InitializeScripts()
 
-	-- Initialize the settings
-	if not gOutfitter_Settings then
-		self:InitializeSettings()
-	else
-		self.Settings = gOutfitter_Settings
-	end
-
 	-- Initialize the outfits
 	self.CurrentOutfit = self:GetInventoryOutfit()
 
@@ -4759,12 +4765,6 @@ function Outfitter:Initialize()
 			vUsedRecentNames[vName] = true
 		end
 	end
-
-    if not self.Settings.Options.MinimapButton then
-      self.Settings.Options.MinimapButton = { hide = self.Settings.Options.HideMinimapButton}
-    end
-
-    Outfitter.LDB:CreateIcon(self.Settings.Options.MinimapButton)
 
 	-- Move the Blizzard UI over a bit
 	PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrameInsetRight, "TOPRIGHT", -30, -1)
