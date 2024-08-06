@@ -767,7 +767,7 @@ function Outfitter._OutfitMethodsEM:GetItems()
 		return self.TemporaryItems
 	end
 	
-	if self.equipmentSetID and type(self.equipmentSetID == "number") then
+	if self.equipmentSetID and type(self.equipmentSetID) == "number" then
 		self.ItemLocations = C_EquipmentSet.GetItemLocations(self.equipmentSetID)
 	end
 	
