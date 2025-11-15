@@ -668,7 +668,8 @@ function Outfitter._OutfitMethodsEM:GetItem(pSlotName)
 end
 
 function Outfitter._OutfitMethodsEM:UnpackLocation(pLocation)
-	local vOnPlayer, vInBank, vInBags, vVoidStorage, vSlotIndex, vBagIndex = EquipmentManager_UnpackLocation(pLocation)
+	local locationData = EquipmentManager_GetLocationData(pLocation)
+	local vOnPlayer, vInBank, vInBags, vSlotIndex, vBagIndex = locationData.isPlayer or false, locationData.isBank or false, locationData.isBags or false, locationData.slot, locationData.bag;
 	
 	if vInBags
 	and Outfitter:IsBankBagIndex(vBagIndex) then

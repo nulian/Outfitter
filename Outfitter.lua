@@ -7267,10 +7267,14 @@ Outfitter._ExtendedCompareTooltip = {}
 function Outfitter._ExtendedCompareTooltip:Construct()
 	hooksecurefunc("GameTooltip_ShowCompareItem", function (pShift)
 		if not Outfitter.Settings.Options.DisableItemComparisons then
-			if OutfitterAPI.IsWoW1002 then
-				if TooltipUtil.ShouldDoItemComparison() then
+			if OutfitterAPI.IsWoW1200 then
+				if TooltipUtil.ShouldDoItemComparison(self) then
 					self:ShowCompareItem()
 				end
+            elseif OutfitterAPI.IsWoW1002 then
+              if TooltipUtil.ShouldDoItemComparison() then
+                self:ShowCompareItem()
+              end
 			else
 				self:ShowCompareItem()
 			end
