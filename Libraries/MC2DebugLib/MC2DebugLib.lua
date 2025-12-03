@@ -23,14 +23,14 @@ function Addon.DebugLib:Initialize()
 	
 	self.Initialized = true
 	
-	hooksecurefunc(
-			"ChatFrame_ConfigEventHandler",
-			function (event)
-				if event == "UPDATE_CHAT_WINDOWS"
-				and not self.DebugFrame then
-					self:FindDebugFrame()
-				end
-			end)
+	--hooksecurefunc(
+	--		"ChatFrame_ConfigEventHandler",
+	--		function (event)
+	--			if event == "UPDATE_CHAT_WINDOWS"
+	--			and not self.DebugFrame then
+	--				self:FindDebugFrame()
+	--			end
+	--		end)
 	
 	self:FindDebugFrame()
 end
