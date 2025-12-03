@@ -1,9 +1,7 @@
 local API = {}; OutfitterAPI = API;
 local IS_WOW1002 = select(4, GetBuildInfo()) >= 100002 or nil;
-local IS_WOW1200   = select(4, GetBuildInfo()) >= 120000 or nil;
 
 OutfitterAPI.IsWoW1002 = IS_WOW1002;
-OutfitterAPI.IsWoW1200 = IS_WOW1200;
 
 function API:GetContainerItemLink(...)
     if C_Container and C_Container.GetContainerItemLink then return C_Container.GetContainerItemLink(...) end

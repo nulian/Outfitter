@@ -7267,14 +7267,10 @@ Outfitter._ExtendedCompareTooltip = {}
 function Outfitter._ExtendedCompareTooltip:Construct()
 	hooksecurefunc("GameTooltip_ShowCompareItem", function (pShift)
 		if not Outfitter.Settings.Options.DisableItemComparisons then
-			if OutfitterAPI.IsWoW1200 then
+			if OutfitterAPI.IsWoW1002 then
 				if TooltipUtil.ShouldDoItemComparison(self) then
 					self:ShowCompareItem()
 				end
-            elseif OutfitterAPI.IsWoW1002 then
-              if TooltipUtil.ShouldDoItemComparison() then
-                self:ShowCompareItem()
-              end
 			else
 				self:ShowCompareItem()
 			end
@@ -7506,7 +7502,7 @@ function Outfitter._ExtendedCompareTooltip:AddShoppingLink(pTitle, pItemName, pL
 		if OutfitterAPI.IsWoW1002 then
 		  Mixin(vTooltip, GameTooltipDataMixin)
 		  vTooltip:SetScript("OnUpdate", function ()
-			  if not TooltipUtil.ShouldDoItemComparison() then
+			  if not TooltipUtil.ShouldDoItemComparison(vTooltip) then
 				  self:HideCompareItems()
 			  end
 		  end)
