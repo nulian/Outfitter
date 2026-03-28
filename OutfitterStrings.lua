@@ -28,6 +28,7 @@ Outfitter.cCompleteOutfits = "Complete outfits"
 Outfitter.cAccessoryOutfits = "Accessories"
 Outfitter.cOddsNEndsOutfits = "Odds 'n ends"
 Outfitter.cBoEsOutfits = "Unopened"
+Outfitter.cWarboundOutfits = "Warbound until equipped"
 
 Outfitter.cGlobalCategory = "Special Outfits"
 Outfitter.cNormalOutfit = "Normal"
@@ -297,6 +298,7 @@ Outfitter.cCompleteCategoryDescription = "Complete outfits have all slots specif
 Outfitter.cAccessoryCategoryDescription = "Accessory outfits have some, but not all, slots specified.  You can equip as many accessory outfits at a time as you like."
 Outfitter.cOddsNEndsCategoryDescription = "Odds 'n ends is a list of items which are Soulbound but aren't used in any of your outfits."
 Outfitter.cBoEsCategoryDescription = "Unopened is a list of items which are still in their original 'Binds on Equip' state."
+Outfitter.cWarboundCategoryDescription = "Warbound until equipped is a list of equippable items which are Warbound and will become Soulbound once equipped."
 
 Outfitter.cRebuildOutfitFormat = "Rebuild for %s"
 Outfitter.cRebuildFor = "Rebuild for..."

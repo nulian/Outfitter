@@ -793,6 +793,7 @@ Outfitter.cCategoryDescriptions =
 	Accessory = Outfitter.cAccessoryCategoryDescription,
 	OddsNEnds = Outfitter.cOddsNEndsCategoryDescription,
 	BoEs = Outfitter.cBoEsCategoryDescription,
+	Warbound = Outfitter.cWarboundCategoryDescription,
 }
 
 Outfitter.cSlotNames =
@@ -2790,13 +2791,23 @@ function Outfitter:Update(pOutfitsChanged)
 
 		if vItemIndex < self.cMaxDisplayedItems
 		and vInventoryCache.UnusedItems then
+			table.sort(vInventoryCache.UnusedItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vInventoryCache.UnusedItems, "OddsNEnds", vItemIndex, vFirstItemIndex)
+		end
+
+		-- Add the Warbound until equipped items
+		local vWarboundItems = vInventoryCache:GetWarboundItems()
+		if vItemIndex < self.cMaxDisplayedItems
+		and vWarboundItems and #vWarboundItems > 0 then
+			table.sort(vWarboundItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
+			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vWarboundItems, "Warbound", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the BoEs
 		local vBoEItems = vInventoryCache:GetBoEItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vBoEItems and #vBoEItems > 0 then
+			table.sort(vBoEItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vBoEItems, "BoEs", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2828,6 +2839,14 @@ function Outfitter:Update(pOutfitsChanged)
 			vTotalNumItems = vTotalNumItems + 1
 			if not self.Collapsed["OddsNEnds"] then
 				vTotalNumItems = vTotalNumItems + #vInventoryCache.UnusedItems
+			end
+		end
+
+		-- Add in the Warbound category
+		if vWarboundItems and #vWarboundItems > 0 then
+			vTotalNumItems = vTotalNumItems + 1
+			if not self.Collapsed["Warbound"] then
+				vTotalNumItems = vTotalNumItems + #vWarboundItems
 			end
 		end
 
@@ -7921,12 +7940,24 @@ function Outfitter._ListItem:enableSecureActions()
 		return
 	end
 
-	self.SecureAction:Show()
-	self.SecureAction:SetParent(self)
-	self.SecureAction:SetAllPoints()
+	if not self.SecureAction then
+		return
+	end
 
-	-- Configure the secure button
-	if self.isOutfitItem then
+	local parent = self:GetParent()
+
+	if parent and parent:IsProtected() then
+		self.SecureAction:SetParent(parent)
+	else
+		return
+	end
+
+	self.SecureAction:ClearAllPoints()
+	self.SecureAction:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+	self.SecureAction:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+	self.SecureAction:Show()
+
+	if self.isOutfitItem and self.outfitItem and self.outfitItem.Location then
 		self.SecureAction:SetAttribute("type", nil)
 		self.SecureAction:SetAttribute("target-bag", self.outfitItem.Location.BagIndex)
 		self.SecureAction:SetAttribute("target-slot", self.outfitItem.Location.BagSlotIndex)

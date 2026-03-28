@@ -403,6 +403,12 @@ function Outfitter._ItemInfo:ParseTooltipLine(text, color)
 		return
 	end
 
+	-- Check for Warbound until equipped
+	if ITEM_ACCOUNTBOUND_UNTIL_EQUIP and text == ITEM_ACCOUNTBOUND_UNTIL_EQUIP then
+		self.Warbound = true
+		return
+	end
+
 	-- Check for Unique-Equipped
 	local type, count = text:match(Outfitter.cUniqueEquippedSearchPattern)
 	if type then
@@ -427,6 +433,16 @@ function Outfitter._ItemInfo:GetBoE()
 
 	-- Return the value
 	return self.BoE
+end
+
+function Outfitter._ItemInfo:GetWarbound()
+	-- Get the info from the tooltip if necessary
+	if not self.didParseTooltip then
+		self:ParseTooltip()
+	end
+
+	-- Return the value
+	return self.Warbound
 end
 
 function Outfitter._ItemInfo:GetMeetsRequirements()
@@ -1142,7 +1158,8 @@ function Outfitter._InventoryCache:CompiledUnusedItemsList()
 	for vCode, vFamilyItems in pairs(self.ItemsByCode) do
 		for vIndex, vOutfitItem in ipairs(vFamilyItems) do
 			if not vOutfitItem.UsedInOutfit
-			and Outfitter.cIgnoredUnusedItems[vOutfitItem.Code] == nil then
+			and Outfitter.cIgnoredUnusedItems[vOutfitItem.Code] == nil
+			and not vOutfitItem:GetWarbound() then
 				if not vUnusedItems then
 					vUnusedItems = {}
 				end
@@ -1173,6 +1190,32 @@ function Outfitter._InventoryCache:GetBoEItems()
 				and itemInfo.ItemSlotName
 				and Outfitter:CanEquipBagItem(bagIndex, slotIndex)
 				and itemInfo:GetBoE() then
+					table.insert(items, itemInfo)
+				end
+			end -- for slotIndex
+		end -- if numSlots > 0
+	end -- for bagIndex
+
+	return items
+end
+
+function Outfitter._InventoryCache:GetWarboundItems()
+	local items = {}
+
+	-- Iterate the bags
+	local numBags, firstBagIndex = Outfitter:GetNumBags()
+	for bagIndex = firstBagIndex, numBags do
+		local numSlots = OutfitterAPI:GetContainerNumSlots(bagIndex)
+
+		if numSlots > 0 then
+			for slotIndex = 1, numSlots do
+				local itemInfo = Outfitter:GetBagItemInfo(bagIndex, slotIndex)
+
+				if itemInfo
+				and itemInfo.Code ~= 0
+				and itemInfo.ItemSlotName
+				and Outfitter:CanEquipBagItem(bagIndex, slotIndex)
+				and itemInfo:GetWarbound() then
 					table.insert(items, itemInfo)
 				end
 			end -- for slotIndex
