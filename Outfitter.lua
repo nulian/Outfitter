@@ -5261,9 +5261,11 @@ function Outfitter:FindTooltipLine(pTooltip, pText, pPlain)
 
 		local vLeftText = vLeftTextFrame:GetText()
 
-		if vLeftText
-		and vLeftText:find(pText, nil, pPlain) then
-			return vLineIndex, vLeftTextFrame
+		if vLeftText then
+			local vOk, vFound = pcall(function() return vLeftText:find(pText, nil, pPlain) end)
+			if vOk and vFound then
+				return vLineIndex, vLeftTextFrame
+			end
 		end
 	end -- for vLineIndex
 end
