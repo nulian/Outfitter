@@ -1,5 +1,5 @@
 local API = {}; OutfitterAPI = API;
-local IS_WOW1002   = select(4, GetBuildInfo()) >= 100002 or nil;
+local IS_WOW1002 = select(4, GetBuildInfo()) >= 100002 or nil;
 
 OutfitterAPI.IsWoW1002 = IS_WOW1002;
 

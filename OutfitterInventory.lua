@@ -368,25 +368,27 @@ function Outfitter._ItemInfo:GetItemInfoFromLink(itemLink)
 end
 
 function Outfitter._ItemInfo:ParseTooltip()
-	local data
+	-- Grab a tooltip
+	local tooltip = Outfitter.TooltipLib:SharedTooltip()
+	tooltip:ClearLines()
 	if self.Location and self.Location.BagIndex then
-		data = C_TooltipInfo.GetBagItem(self.Location.BagIndex, self.Location.BagSlotIndex)
+		tooltip:SetBagItem(self.Location.BagIndex, self.Location.BagSlotIndex)
 	elseif self.Location and self.Location.SlotID then
-		data = C_TooltipInfo.GetInventoryItem("player", self.Location.SlotID)
+		tooltip:SetInventoryItem("player", self.Location.SlotID)
 	elseif self.Link then
-		data = C_TooltipInfo.GetHyperlink(self.Link)
+		tooltip:SetHyperlink(self.Link)
 	else
 		assert(false, "can't find item for tooltip")
 		return
 	end
 
 	-- Return if something went wrong
-	if not data or not data.lines then
+	if not tooltip:IsShown() then
 		return
 	end
 
 	-- Iterate the lines of the tooltip
-	for _, line in ipairs(data.lines) do
+	for line in Outfitter.TooltipLib:TooltipLines(tooltip) do
 		self:ParseTooltipLine(line.leftText, line.leftColor)
 	end
 
@@ -398,6 +400,12 @@ function Outfitter._ItemInfo:ParseTooltipLine(text, color)
 	-- Check for Binds on Equip
 	if text == ITEM_BIND_ON_EQUIP then
 		self.BoE = true
+		return
+	end
+
+	-- Check for Warbound until equipped
+	if ITEM_ACCOUNTBOUND_UNTIL_EQUIP and text == ITEM_ACCOUNTBOUND_UNTIL_EQUIP then
+		self.Warbound = true
 		return
 	end
 
@@ -425,6 +433,16 @@ function Outfitter._ItemInfo:GetBoE()
 
 	-- Return the value
 	return self.BoE
+end
+
+function Outfitter._ItemInfo:GetWarbound()
+	-- Get the info from the tooltip if necessary
+	if not self.didParseTooltip then
+		self:ParseTooltip()
+	end
+
+	-- Return the value
+	return self.Warbound
 end
 
 function Outfitter._ItemInfo:GetMeetsRequirements()
@@ -1140,7 +1158,8 @@ function Outfitter._InventoryCache:CompiledUnusedItemsList()
 	for vCode, vFamilyItems in pairs(self.ItemsByCode) do
 		for vIndex, vOutfitItem in ipairs(vFamilyItems) do
 			if not vOutfitItem.UsedInOutfit
-			and Outfitter.cIgnoredUnusedItems[vOutfitItem.Code] == nil then
+			and Outfitter.cIgnoredUnusedItems[vOutfitItem.Code] == nil
+			and not vOutfitItem:GetWarbound() then
 				if not vUnusedItems then
 					vUnusedItems = {}
 				end
@@ -1171,6 +1190,32 @@ function Outfitter._InventoryCache:GetBoEItems()
 				and itemInfo.ItemSlotName
 				and Outfitter:CanEquipBagItem(bagIndex, slotIndex)
 				and itemInfo:GetBoE() then
+					table.insert(items, itemInfo)
+				end
+			end -- for slotIndex
+		end -- if numSlots > 0
+	end -- for bagIndex
+
+	return items
+end
+
+function Outfitter._InventoryCache:GetWarboundItems()
+	local items = {}
+
+	-- Iterate the bags
+	local numBags, firstBagIndex = Outfitter:GetNumBags()
+	for bagIndex = firstBagIndex, numBags do
+		local numSlots = OutfitterAPI:GetContainerNumSlots(bagIndex)
+
+		if numSlots > 0 then
+			for slotIndex = 1, numSlots do
+				local itemInfo = Outfitter:GetBagItemInfo(bagIndex, slotIndex)
+
+				if itemInfo
+				and itemInfo.Code ~= 0
+				and itemInfo.ItemSlotName
+				and Outfitter:CanEquipBagItem(bagIndex, slotIndex)
+				and itemInfo:GetWarbound() then
 					table.insert(items, itemInfo)
 				end
 			end -- for slotIndex

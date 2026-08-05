@@ -793,6 +793,7 @@ Outfitter.cCategoryDescriptions =
 	Accessory = Outfitter.cAccessoryCategoryDescription,
 	OddsNEnds = Outfitter.cOddsNEndsCategoryDescription,
 	BoEs = Outfitter.cBoEsCategoryDescription,
+	Warbound = Outfitter.cWarboundCategoryDescription,
 }
 
 Outfitter.cSlotNames =
@@ -2790,13 +2791,23 @@ function Outfitter:Update(pOutfitsChanged)
 
 		if vItemIndex < self.cMaxDisplayedItems
 		and vInventoryCache.UnusedItems then
+			table.sort(vInventoryCache.UnusedItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vInventoryCache.UnusedItems, "OddsNEnds", vItemIndex, vFirstItemIndex)
+		end
+
+		-- Add the Warbound until equipped items
+		local vWarboundItems = vInventoryCache:GetWarboundItems()
+		if vItemIndex < self.cMaxDisplayedItems
+		and vWarboundItems and #vWarboundItems > 0 then
+			table.sort(vWarboundItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
+			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vWarboundItems, "Warbound", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the BoEs
 		local vBoEItems = vInventoryCache:GetBoEItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vBoEItems and #vBoEItems > 0 then
+			table.sort(vBoEItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vBoEItems, "BoEs", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2828,6 +2839,14 @@ function Outfitter:Update(pOutfitsChanged)
 			vTotalNumItems = vTotalNumItems + 1
 			if not self.Collapsed["OddsNEnds"] then
 				vTotalNumItems = vTotalNumItems + #vInventoryCache.UnusedItems
+			end
+		end
+
+		-- Add in the Warbound category
+		if vWarboundItems and #vWarboundItems > 0 then
+			vTotalNumItems = vTotalNumItems + 1
+			if not self.Collapsed["Warbound"] then
+				vTotalNumItems = vTotalNumItems + #vWarboundItems
 			end
 		end
 
@@ -5261,9 +5280,11 @@ function Outfitter:FindTooltipLine(pTooltip, pText, pPlain)
 
 		local vLeftText = vLeftTextFrame:GetText()
 
-		if vLeftText
-		and vLeftText:find(pText, nil, pPlain) then
-			return vLineIndex, vLeftTextFrame
+		if vLeftText then
+			local vOk, vFound = pcall(function() return vLeftText:find(pText, nil, pPlain) end)
+			if vOk and vFound then
+				return vLineIndex, vLeftTextFrame
+			end
 		end
 	end -- for vLineIndex
 end
@@ -7266,18 +7287,32 @@ Outfitter._ExtendedCompareTooltip = {}
 
 function Outfitter._ExtendedCompareTooltip:Construct()
 	hooksecurefunc("GameTooltip_ShowCompareItem", function (pShift)
-		if not Outfitter.Settings.Options.DisableItemComparisons then
-			if OutfitterAPI.IsWoW1002 then
-				if TooltipUtil.ShouldDoItemComparison() then
-					self:ShowCompareItem()
-				end
-			else
-				self:ShowCompareItem()
-			end
-		end
-	end)
+        if not Outfitter.Settings.Options.DisableItemComparisons then
+            if OutfitterAPI.IsWoW1002 then
+                if TooltipUtil.ShouldDoItemComparison(self) then
+                    if not IsModifiedClick("COMPAREITEMS") then
+                      self:HideCompareItems()
+                    else
+                        self:ShowCompareItem()
+                    end
+                end
+            else
+                self:ShowCompareItem()
+            end
+        end
+    end)
 
-	if not OutfitterAPI.IsWoW1002 then
+    if OutfitterAPI.IsWoW1002 then
+        GameTooltip:HookScript("OnHide", function ()
+            self:HideCompareItems()
+        end)
+
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function ()
+            if not IsModifiedClick("COMPAREITEMS") then
+                self:HideCompareItems()
+            end
+        end)
+	else
 		GameTooltip:HookScript("OnHide", function ()
 			self:HideCompareItems()
 		end)
@@ -7324,10 +7359,13 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 		return
 	end
 
-	-- Figure out which direction to stack in
+	-- Figure out which direction to stack in (pcall to handle tainted values)
 
-	local vLeftDist = GameTooltip:GetLeft() or 0
-	local vRightDist = GetScreenWidth() - (GameTooltip:GetRight() or 0)
+	local vLeftDist, vRightDist = 0, 1
+	pcall(function()
+		vLeftDist = GameTooltip:GetLeft() or 0
+		vRightDist = GetScreenWidth() - (GameTooltip:GetRight() or 0)
+	end)
 
 	self.LeftToRight = vLeftDist < vRightDist
 
@@ -7502,7 +7540,7 @@ function Outfitter._ExtendedCompareTooltip:AddShoppingLink(pTitle, pItemName, pL
 		if OutfitterAPI.IsWoW1002 then
 		  Mixin(vTooltip, GameTooltipDataMixin)
 		  vTooltip:SetScript("OnUpdate", function ()
-			  if not TooltipUtil.ShouldDoItemComparison() then
+			  if not TooltipUtil.ShouldDoItemComparison(vTooltip) then
 				  self:HideCompareItems()
 			  end
 		  end)
@@ -7905,12 +7943,24 @@ function Outfitter._ListItem:enableSecureActions()
 		return
 	end
 
-	self.SecureAction:Show()
-	self.SecureAction:SetParent(self)
-	self.SecureAction:SetAllPoints()
+	if not self.SecureAction then
+		return
+	end
 
-	-- Configure the secure button
-	if self.isOutfitItem then
+	local parent = self:GetParent()
+
+	if parent and parent:IsProtected() then
+		self.SecureAction:SetParent(parent)
+	else
+		return
+	end
+
+	self.SecureAction:ClearAllPoints()
+	self.SecureAction:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+	self.SecureAction:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+	self.SecureAction:Show()
+
+	if self.isOutfitItem and self.outfitItem and self.outfitItem.Location then
 		self.SecureAction:SetAttribute("type", nil)
 		self.SecureAction:SetAttribute("target-bag", self.outfitItem.Location.BagIndex)
 		self.SecureAction:SetAttribute("target-slot", self.outfitItem.Location.BagSlotIndex)
