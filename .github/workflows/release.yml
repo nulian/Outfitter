@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 12.0.0.5) — bumps Outfitter.toc and tags it'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # full history so the bump commit can be pushed back and
+          # --generate-notes can diff against the previous tag
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if ! echo "$VERSION" | grep -qE '^[0-9]+(\.[0-9]+){1,3}$'; then
+            echo "::error::Version '$VERSION' is not in major.minor.patch.revision form"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+      - name: Bump version in Outfitter.toc
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i -E "s/^## Version:.*/## Version: $VERSION/" Outfitter.toc
+          grep '^## Version:' Outfitter.toc
+
+      - name: Commit version bump
+        id: bump
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git diff --quiet -- Outfitter.toc; then
+            echo "Outfitter.toc already at $VERSION, nothing to commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: bump version to $VERSION" -- Outfitter.toc
+            git push origin HEAD:"${GITHUB_REF_NAME}"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage addon into Outfitter/
+        run: |
+          mkdir -p build/Outfitter
+          rsync -a \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.vscode/' \
+            --exclude '.idea/' \
+            --exclude '.claude/' \
+            --exclude 'CLAUDE.md' \
+            --exclude 'Releases/' \
+            --exclude 'build/' \
+            --exclude '*.zip' \
+            ./ build/Outfitter/
+
+      - name: Build zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd build
+          zip -r -q "../Outfitter-$VERSION.zip" Outfitter
+          cd ..
+          unzip -l "Outfitter-$VERSION.zip" | head -20
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TARGET: ${{ steps.bump.outputs.sha || github.sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "Outfitter-$VERSION.zip" --clobber
+          else
+            gh release create "$TAG" "Outfitter-$VERSION.zip" \
+              --target "$TARGET" \
+              --title "$VERSION" \
+              --generate-notes
+          fi
