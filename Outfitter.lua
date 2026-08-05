@@ -2731,6 +2731,67 @@ function Outfitter.CompareOutfitNames(pOutfit1, pOutfit2)
 	return pOutfit1.StoredInEM and not pOutfit2.StoredInEM
 end
 
+-- Sorts loose items (Odds 'n Ends, Warbound, BoEs) by item level descending,
+-- then by name so items of the same level are alphabetical, then by item code
+-- and location so duplicates keep a stable order between refreshes
+
+function Outfitter.CompareItemLevelsAndNames(pItem1, pItem2)
+	local vLevel1 = pItem1.Level or 0
+	local vLevel2 = pItem2.Level or 0
+
+	if vLevel1 ~= vLevel2 then
+		return vLevel1 > vLevel2
+	end
+
+	local vName1 = pItem1.Name
+	local vName2 = pItem2.Name
+
+	if vName1 ~= vName2 then
+		-- Items whose name isn't in the client cache yet go last within their level
+
+		if not vName1 then
+			return false
+		end
+
+		if not vName2 then
+			return true
+		end
+
+		return vName1 < vName2
+	end
+
+	local vCode1 = pItem1.Code or 0
+	local vCode2 = pItem2.Code or 0
+
+	if vCode1 ~= vCode2 then
+		return vCode1 < vCode2
+	end
+
+	local vLocation1 = pItem1.Location
+	local vLocation2 = pItem2.Location
+
+	if not vLocation1
+	or not vLocation2 then
+		return false
+	end
+
+	-- Odds 'n Ends includes equipped items which aren't in any outfit, and those
+	-- have a SlotID rather than a bag index; sort them ahead of bagged copies
+
+	local vBagIndex1 = vLocation1.BagIndex or -100
+	local vBagIndex2 = vLocation2.BagIndex or -100
+
+	if vBagIndex1 ~= vBagIndex2 then
+		return vBagIndex1 < vBagIndex2
+	end
+
+	if not vLocation1.BagIndex then
+		return (vLocation1.SlotID or 0) < (vLocation2.SlotID or 0)
+	end
+
+	return (vLocation1.BagSlotIndex or 0) < (vLocation2.BagSlotIndex or 0)
+end
+
 function Outfitter:Update(pOutfitsChanged)
 	-- Flush the caches
 
@@ -2791,7 +2852,7 @@ function Outfitter:Update(pOutfitsChanged)
 
 		if vItemIndex < self.cMaxDisplayedItems
 		and vInventoryCache.UnusedItems then
-			table.sort(vInventoryCache.UnusedItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
+			table.sort(vInventoryCache.UnusedItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vInventoryCache.UnusedItems, "OddsNEnds", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2799,7 +2860,7 @@ function Outfitter:Update(pOutfitsChanged)
 		local vWarboundItems = vInventoryCache:GetWarboundItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vWarboundItems and #vWarboundItems > 0 then
-			table.sort(vWarboundItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
+			table.sort(vWarboundItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vWarboundItems, "Warbound", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2807,7 +2868,7 @@ function Outfitter:Update(pOutfitsChanged)
 		local vBoEItems = vInventoryCache:GetBoEItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vBoEItems and #vBoEItems > 0 then
-			table.sort(vBoEItems, function(a, b) return (a.Level or 0) > (b.Level or 0) end)
+			table.sort(vBoEItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vBoEItems, "BoEs", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2816,6 +2877,11 @@ function Outfitter:Update(pOutfitsChanged)
 			local vItemName = "OutfitterItem"..vItemIndex2
 			local vItem = _G[vItemName]
 
+			-- The secure button is parented to the list rather than to the row, so
+			-- hiding the row would otherwise leave it clickable over empty space,
+			-- still pointing at whatever item the row held last
+
+			vItem:disableSecureActions()
 			vItem:Hide()
 		end
 
@@ -7911,6 +7977,9 @@ function Outfitter._ListItem:construct()
 	self.SecureAction = _G[self:GetName().."SecureAction"]
 
 	self.SecureAction:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+	self.SecureAction:SetAttribute("useOnKeyDown", false)
+
 	self.SecureAction:HookScript("PreClick", function (frame, ...)
 		self:PreClick(...)
 	end)
@@ -7951,15 +8020,31 @@ function Outfitter._ListItem:enableSecureActions()
 
 	local parent = self:GetParent()
 
-	if parent and parent:IsProtected() then
-		self.SecureAction:SetParent(parent)
-	else
+	if not parent then
 		return
 	end
+
+	-- This used to bail out unless the parent reported itself protected, but a frame
+	-- isn't protected just because an ancestor is, so OutfitterMainFrame never
+	-- qualified and the secure button was never shown or anchored.  That left
+	-- item-targeting spells such as Disenchant with nothing to click, since the row
+	-- underneath is a plain button and UseContainerItem is protected.  The button
+	-- carries its own protection from SecureActionButtonTemplate, so the frame it
+	-- hangs off doesn't need to be protected as well
+
+	self.SecureAction:SetParent(parent)
 
 	self.SecureAction:ClearAllPoints()
 	self.SecureAction:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
 	self.SecureAction:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+
+	-- The secure button is a sibling of this row rather than a child, so nothing
+	-- guarantees it sits above the row and item-targeting spells only work when it
+	-- is the frame the click lands on.  Re-parenting doesn't preserve the level it
+	-- had as our child, so put it back on top explicitly
+
+	self.SecureAction:SetFrameLevel(self:GetFrameLevel() + 2)
+
 	self.SecureAction:Show()
 
 	if self.isOutfitItem and self.outfitItem and self.outfitItem.Location then
