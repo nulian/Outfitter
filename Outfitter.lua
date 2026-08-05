@@ -7335,7 +7335,9 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 
 	local _, vLink = GameTooltip:GetItem()
 
-	if not vLink then
+	-- The link is secret for items the game is hiding (dungeon/raid loot), in
+	-- which case there's nothing we can compare against
+	if OutfitterAPI:IsSecret(vLink) or not vLink then
 		return
 	end
 
@@ -7359,10 +7361,13 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 		return
 	end
 
-	-- Figure out which direction to stack in
+	-- Figure out which direction to stack in.  The tooltip's geometry is secret
+	-- while it's showing hidden information, since its size would give the
+	-- contents away, so fall back to stacking left to right in that case.
 
-	local vLeftDist = GameTooltip:GetLeft() or 0
-	local vRightDist = GetScreenWidth() - (GameTooltip:GetRight() or 0)
+	local vLeftDist = OutfitterAPI:UnsecretNumber(GameTooltip:GetLeft(), 0)
+	local vTooltipRight = OutfitterAPI:UnsecretNumber(GameTooltip:GetRight(), 0)
+	local vRightDist = OutfitterAPI:UnsecretNumber(GetScreenWidth(), 0) - vTooltipRight
 
 	self.LeftToRight = vLeftDist < vRightDist
 

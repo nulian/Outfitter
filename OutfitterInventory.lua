@@ -162,7 +162,10 @@ function Outfitter:GetSlotIDItemBagType(pSlotID)
 end
 
 function Outfitter:ParseItemLink2(pItemLink)
-	if not pItemLink then
+	-- A secret link can't be matched against or indexed, so treat it as no link
+	-- at all.  This is the choke point every link goes through, which keeps the
+	-- secret check out of the callers.
+	if OutfitterAPI:IsSecret(pItemLink) or not pItemLink then
 		return
 	end
 
@@ -568,7 +571,8 @@ function Outfitter:GetBagList()
 end
 
 function Outfitter:GetInventorySlotIDLink(slotID)
-	return GetInventoryItemLink("player", slotID)
+	-- Callers compare and parse the link, so hand back nil rather than a secret
+	return OutfitterAPI:Unsecret(GetInventoryItemLink("player", slotID))
 end
 
 Outfitter.LinkCache =
@@ -620,7 +624,9 @@ function Outfitter:Synchronize()
 		end
 
 		for vSlotIndex = 1, vNumBagSlots do
-			local vItemLink = OutfitterAPI:GetContainerItemLink(vBagIndex, vSlotIndex) or ""
+			-- A secret link can't even be compared against the cached one, so
+			-- treat the slot as empty until the game reveals the item
+			local vItemLink = OutfitterAPI:Unsecret(OutfitterAPI:GetContainerItemLink(vBagIndex, vSlotIndex)) or ""
 
 			if vBag[vSlotIndex] ~= vItemLink then
 				vBag[vSlotIndex] = vItemLink
@@ -642,7 +648,7 @@ function Outfitter:Synchronize()
 	for _, vInventorySlot in ipairs(self.cSlotNames) do
 		local vItemLink
 
-		vItemLink = GetInventoryItemLink("player", self.cSlotIDs[vInventorySlot])
+		vItemLink = OutfitterAPI:Unsecret(GetInventoryItemLink("player", self.cSlotIDs[vInventorySlot]))
 
 		if self.Debug.InventoryCache then
 			self:DebugMessage("Synchronize: Slot %s contains %s", tostring(vInventorySlot), tostring(vItemLink))
