@@ -789,15 +789,31 @@ function Outfitter.OutfitBar._Button:OnClick(pMouseButton)
 			Outfitter.HasHWEvent = false
 		end
 	else -- if pButton == "RightButton" then
-		-- If the menu is already up then hide it
+		-- If our menu is still up then this click closes it.  LibDropdown pools its
+		-- frames and releases them as soon as they hide, so the reference we kept
+		-- goes stale the moment the menu is dismissed any other way -- let go of it
+		-- either way, and only treat this as a close when the frame really is still
+		-- ours and still showing
 		if self.menuFrame then
-			self.menuFrame:Hide()
-			return
+			local vMenuFrame = self.menuFrame
+
+			self.menuFrame = nil
+
+			if not vMenuFrame.released
+			and vMenuFrame:IsShown() then
+				vMenuFrame:Hide()
+				self:Update()
+				return
+			end
 		end
 
 		-- Create the menu
 		local items = Outfitter:New(Outfitter.UIElementsLib._DropDownMenuItems, function ()
-			Outfitter.SchedulerLib:ScheduleTask(0.2, function () self.menuFrame:Hide() end)
+			Outfitter.SchedulerLib:ScheduleTask(0.2, function ()
+				if self.menuFrame then
+					self.menuFrame:Hide()
+				end
+			end)
 		end)
 		Outfitter:AddOutfitMenu(items, self.Outfit)
 
@@ -813,12 +829,12 @@ function Outfitter.OutfitBar._Button:OnClick(pMouseButton)
 		local relativePoint = oppositeVert..nearestHoriz
 
 		-- Show the menu
+		-- Note there's no point hanging a cleanup callback off the frame here: this
+		-- used to set menuFrame.cleanup to clear the reference, but LibDropdown has
+		-- no such hook and never called it, which is what wedged the button closed
+
 		self.menuFrame = LibStub("LibDropdown-1.0"):OpenAce3Menu(items)
 		self.menuFrame:SetPoint(anchorPoint, self, relativePoint, 0, 0)
-		self.menuFrame.cleanup = function ()
-			self.menuFrame = nil
-			self:Update()
-		end
 	end
 end
 
