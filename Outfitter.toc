@@ -1,7 +1,7 @@
 ## Interface: 120007, 120100
 ## Author: John Stephen
 ## Title: Outfitter
-## Version: 12.1.0.0
+## Version: 12.1.0.6
 ## Notes: Clothing and weapon management and automated equipment changes
 ## OptionalDeps:
 ## RequiredDeps:
