@@ -7359,13 +7359,10 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 		return
 	end
 
-	-- Figure out which direction to stack in (pcall to handle tainted values)
+	-- Figure out which direction to stack in
 
-	local vLeftDist, vRightDist = 0, 1
-	pcall(function()
-		vLeftDist = GameTooltip:GetLeft() or 0
-		vRightDist = GetScreenWidth() - (GameTooltip:GetRight() or 0)
-	end)
+	local vLeftDist = GameTooltip:GetLeft() or 0
+	local vRightDist = GetScreenWidth() - (GameTooltip:GetRight() or 0)
 
 	self.LeftToRight = vLeftDist < vRightDist
 
