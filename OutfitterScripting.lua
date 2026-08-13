@@ -1172,7 +1172,12 @@ end
 
 if select(1, ...) ~= "player" then return end
 
-if C_UnitAuras.GetAuraDataByIndex("PLAYER", setting.buffName) then
+-- Look the buff up by name.  GetAuraDataByIndex wants an index rather than a name,
+-- and it raises an error when addon code reads auras while they're restricted, while
+-- GetAuraDataBySpellName simply returns nothing in that case
+if setting.buffName
+and setting.buffName ~= ""
+and C_UnitAuras.GetAuraDataBySpellName("player", setting.buffName) then
     equip = true
 end
 
