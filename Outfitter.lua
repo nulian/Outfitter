@@ -1426,6 +1426,12 @@ function Outfitter:RegenEnabled(pEvent)
 	self.OutfitStack:UpdateOutfitDisplay()
 
 	self:ResumeSecureActions()
+
+	-- Auras were off limits while the combat restriction was active, so the states
+	-- were all cleared.  Re-read them now rather than waiting for an aura to change,
+	-- which a buff that survived the fight won't do
+
+	self:UpdateAuraStates()
 end
 
 function Outfitter:SuspendSecureActions()
@@ -4224,38 +4230,88 @@ Outfitter.AuraStates =
 	Prowl = false,
 }
 
-function Outfitter:GetPlayerAuraStates()
-	local vBuffIndex = 1
+-- Aura data is made secret while any of these addon restrictions are active (see
+-- SecretWhenUnitAuraRestricted in the API documentation), and since 12.1 the aura
+-- APIs raise an error rather than returning nothing when tainted code reads them
+-- in that state, so we have to avoid asking at all
 
+Outfitter.cMaxScannedAuras = 100
+
+Outfitter.cAuraRestrictionTypes = {}
+
+do
+	local vRestrictionTypes = Enum and Enum.AddOnRestrictionType
+
+	if vRestrictionTypes then
+		-- Names rather than values, since Combat is 0 and a nil would leave a hole
+
+		for _, vTypeName in ipairs({"Combat", "Encounter", "ChallengeMode", "PvPMatch"}) do
+			if vRestrictionTypes[vTypeName] ~= nil then
+				table.insert(Outfitter.cAuraRestrictionTypes, vRestrictionTypes[vTypeName])
+			end
+		end
+	end
+end
+
+function Outfitter:AuraDataIsRestricted()
+	if not C_RestrictedActions
+	or not C_RestrictedActions.IsAddOnRestrictionActive then
+		return false
+	end
+
+	for _, vRestrictionType in ipairs(self.cAuraRestrictionTypes) do
+		if C_RestrictedActions.IsAddOnRestrictionActive(vRestrictionType) then
+			return true
+		end
+	end
+
+	return false
+end
+
+function Outfitter:GetPlayerAuraStates()
 	for vKey, _ in pairs(self.AuraStates) do
 		self.AuraStates[vKey] = false
 	end
 
-	while true do
-		local vName, _, vTexture, _, _, _, _, _, _, _, vSpellID = C_UnitAuras.GetAuraDataByIndex("PLAYER", vBuffIndex)
+	-- Leave every state cleared while the auras are off limits.  RegenEnabled and
+	-- the UNIT_AURA handler bring them back once the restriction lifts
 
-		if not vName then
-			return self.AuraStates
-		end
-
-		--
-
-		local vSpecialID = Outfitter.cAuraIconSpecialID[vName]
-
-		if not vSpecialID then
-			vSpecialID = Outfitter.cAuraIconSpecialID[vTexture]
-		end
-
-		if not vSpecialID then
-			vSpecialID = self.cSpellIDToSpecialID[vSpellID]
-		end
-
-		if vSpecialID then
-			self.AuraStates[vSpecialID] = true
-		end
-
-		vBuffIndex = vBuffIndex + 1
+	if self:AuraDataIsRestricted() then
+		return self.AuraStates
 	end
+
+	-- Bounded rather than looping until the first empty index, because a secret aura
+	-- can't be told apart from the end of the list without inspecting it
+
+	for vBuffIndex = 1, self.cMaxScannedAuras do
+		local vAura = C_UnitAuras.GetAuraDataByIndex("player", vBuffIndex)
+
+		-- An individual spell can be flagged as always secret whatever the restriction
+		-- state, and inspecting a secret value at all -- even testing it for nil -- is
+		-- an error, so that has to be checked before anything else
+
+		if not OutfitterAPI:IsSecret(vAura) then
+			if not vAura then
+				break
+			end
+
+			-- GetAuraDataByIndex hands back a single AuraData table.  This used to
+			-- unpack it as though it were still the old UnitAura tuple, which quietly
+			-- matched nothing because the icon and spell ID both came out nil
+
+			local vSpecialID = Outfitter.cAuraIconSpecialID[OutfitterAPI:UnsecretNumber(vAura.icon)]
+
+			if not vSpecialID then
+				vSpecialID = self.cSpellIDToSpecialID[OutfitterAPI:UnsecretNumber(vAura.spellId)]
+			end
+
+			if vSpecialID then
+				self.AuraStates[vSpecialID] = true
+			end
+		end
+	end
+
+	return self.AuraStates
 end
 
 function Outfitter:GetBuffTooltipText(pBuffIndex)
