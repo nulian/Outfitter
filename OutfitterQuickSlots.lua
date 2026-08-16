@@ -69,13 +69,35 @@ function Outfitter._FlyoutQuickSlots:GetLocationItemLink(pLocation)
 			return
 		end
 
-		return OutfitterAPI:Unsecret(OutfitterAPI:GetContainerItemLink(vBagIndex, vSlotIndex))
+		return OutfitterAPI:Unsecret(OutfitterAPI:GetContainerItemLink(vBagIndex, vSlotIndex)),
+			ItemLocation and ItemLocation:CreateFromBagAndSlot(vBagIndex, vSlotIndex)
 	end
 
 	if vIsPlayer
 	or vIsBank then
-		return Outfitter:GetInventorySlotIDLink(vSlotIndex)
+		return Outfitter:GetInventorySlotIDLink(vSlotIndex),
+			ItemLocation and ItemLocation:CreateFromEquipmentSlot(vSlotIndex)
 	end
+end
+
+-- Returns true or false when the game will say, and nil when it won't
+
+function Outfitter._FlyoutQuickSlots:ItemCanBeUpgraded(pItemLocation)
+	if not pItemLocation
+	or not C_ItemUpgrade
+	or not C_ItemUpgrade.CanUpgradeItem
+	or not C_Item.DoesItemExist
+	or not C_Item.DoesItemExist(pItemLocation) then
+		return nil
+	end
+
+	local vSucceeded, vCanUpgrade = pcall(C_ItemUpgrade.CanUpgradeItem, pItemLocation)
+
+	if not vSucceeded then
+		return nil
+	end
+
+	return vCanUpgrade
 end
 
 function Outfitter._FlyoutQuickSlots:GetItemSortInfo(pLocation, pIndex)
@@ -88,7 +110,7 @@ function Outfitter._FlyoutQuickSlots:GetItemSortInfo(pLocation, pIndex)
 		Level = 0,
 	}
 
-	local vItemLink = self:GetLocationItemLink(pLocation)
+	local vItemLink, vItemLocation = self:GetLocationItemLink(pLocation)
 
 	if not vItemLink then
 		return vSortInfo
@@ -108,19 +130,63 @@ function Outfitter._FlyoutQuickSlots:GetItemSortInfo(pLocation, pIndex)
 		-- recognize the track's name.  trackString is localized, so anything keyed
 		-- off the name only works on an enUS client
 
-		vSortInfo.OnTrack = true
+		vSortInfo.HasTrack = true
 		vSortInfo.TrackCeiling = vUpgradeInfo.maxItemLevel or 0
 		vSortInfo.TrackStringID = vUpgradeInfo.trackStringID or 0
+
+		-- Whether the track still has anywhere to go, which is the part that decides
+		-- if the track is worth ranking on (see ResolveUpgradableItems)
+
+		vSortInfo.HasUpgradeHeadroom = (vUpgradeInfo.currentLevel or 0) < (vUpgradeInfo.maxLevel or 0)
+		vSortInfo.CanUpgrade = self:ItemCanBeUpgraded(vItemLocation)
 	end
 
 	return vSortInfo
 end
 
--- Crafted and older gear carries no upgrade track, so rather than dropping it
--- below everything which has one, work out which track's item level range it
--- falls in and sort it into that group.  The ranges are taken from the items in
--- this flyout instead of a per-season table, so nothing here needs revisiting
--- when item levels move
+-- A track says how good an item can *become*, which stops being meaningful once it
+-- can't be upgraded any more: last season's finished Myth piece would otherwise
+-- outrank everything on this season's lower tracks no matter how its item level
+-- compares.  Only items which can still be upgraded keep their track; the rest are
+-- handed to the banding below and placed on item level, the same as crafted gear
+
+function Outfitter._FlyoutQuickSlots:ResolveUpgradableItems(pSortInfos)
+	-- C_ItemUpgrade.CanUpgradeItem is the real answer, but it isn't certain to be
+	-- meaningful away from an upgrade vendor.  If it turns up nothing upgradable
+	-- while the item data says otherwise, fall back to what the track itself says
+
+	local vAnyCanUpgrade = false
+
+	for _, vSortInfo in ipairs(pSortInfos) do
+		if vSortInfo.CanUpgrade then
+			vAnyCanUpgrade = true
+			break
+		end
+	end
+
+	for _, vSortInfo in ipairs(pSortInfos) do
+		local vIsUpgradable
+
+		if vAnyCanUpgrade then
+			vIsUpgradable = vSortInfo.CanUpgrade
+		else
+			vIsUpgradable = vSortInfo.HasUpgradeHeadroom
+		end
+
+		vSortInfo.OnTrack = (vSortInfo.HasTrack and vIsUpgradable) or false
+
+		if not vSortInfo.OnTrack then
+			vSortInfo.TrackCeiling = 0
+			vSortInfo.TrackStringID = 0
+		end
+	end
+end
+
+-- Crafted gear, older gear, and anything which can no longer be upgraded carries no
+-- usable track, so rather than dropping it below everything which does, work out
+-- which track's item level range it falls in and sort it into that group.  The
+-- ranges are taken from the items in this flyout instead of a per-season table, so
+-- nothing here needs revisiting when item levels move
 
 function Outfitter._FlyoutQuickSlots:AssignTrackBands(pSortInfos)
 	local vTrackMinLevels
@@ -234,6 +300,7 @@ function Outfitter._FlyoutQuickSlots:SortItems(pItemDisplayTable, pNumItems)
 		end
 	end
 
+	self:ResolveUpgradableItems(vSortInfos)
 	self:AssignTrackBands(vSortInfos)
 
 	table.sort(vSortInfos, self.CompareItemSortInfo)
