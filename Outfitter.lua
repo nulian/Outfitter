@@ -1475,7 +1475,7 @@ function Outfitter:UnitHealthOrManaChanged(pUnitID)
 
 	-- If the mana drops, see if there was a recent spellcast
 
-	local vPlayerMana = UnitPower("player")
+	local vPlayerMana = OutfitterAPI:UnsecretNumber(UnitPower("player"))
 
 	if vPlayerMana and (not self.PreviousManaLevel or vPlayerMana < self.PreviousManaLevel) then
 		local vTime = GetTime()
@@ -1571,16 +1571,41 @@ function Outfitter:SpiritRegenTimer()
 	self:SetSpecialOutfitEnabled("Spirit", true)
 end
 
+-- Health is unreadable by addons since 12.1 -- UnitHealth and every other health API
+-- are flagged SecretReturns, and power is secret for most power types -- so anything
+-- we can't read counts as "not full" and the outfit is left alone.  Comparing or
+-- doing arithmetic on a secret number is an error, so each value has to be checked
+-- before it's used rather than after
+
 function Outfitter:PlayerIsFull()
-	if UnitHealth("player") < (UnitHealthMax("player") * 0.85) then
+	local vHealth = OutfitterAPI:UnsecretNumber(UnitHealth("player"))
+	local vHealthMax = OutfitterAPI:UnsecretNumber(UnitHealthMax("player"))
+
+	if not vHealth
+	or not vHealthMax
+	or vHealthMax <= 0
+	or vHealth < vHealthMax * 0.85 then
 		return false
 	end
 
-	if UnitPowerType("player") ~= 0 then
+	-- Anything which doesn't run on mana is full once its health is
+
+	local vPowerType = OutfitterAPI:UnsecretNumber(UnitPowerType("player"))
+
+	if vPowerType and vPowerType ~= 0 then
 		return true
 	end
 
-	return UnitPower("player") > (UnitPowerMax("player") * 0.85)
+	local vPower = OutfitterAPI:UnsecretNumber(UnitPower("player"))
+	local vPowerMax = OutfitterAPI:UnsecretNumber(UnitPowerMax("player"))
+
+	if not vPower
+	or not vPowerMax
+	or vPowerMax <= 0 then
+		return false
+	end
+
+	return vPower > vPowerMax * 0.85
 end
 
 function Outfitter:UnitInventoryChanged(pUnitID)
@@ -7407,6 +7432,37 @@ end
 Outfitter._ExtendedCompareTooltip = {}
 ----------------------------------------
 
+-- Returns the item link a tooltip is currently showing.
+--
+-- GameTooltip:GetItem is a GameTooltipDataMixin method, and Blizzard's shopping
+-- tooltips only carry TooltipDataHandlerMixin, so they don't have it.  Mixing it
+-- onto their frames is what tainted them, so ask TooltipUtil directly instead --
+-- GetItem is only a one line wrapper around this and is marked for removal anyway
+
+function Outfitter:GetTooltipItemLink(pTooltip)
+	if not pTooltip then
+		return
+	end
+
+	if TooltipUtil
+	and TooltipUtil.GetDisplayedItem
+	and pTooltip.IsTooltipType then
+		local vSucceeded, _, vLink = pcall(TooltipUtil.GetDisplayedItem, pTooltip)
+
+		if vSucceeded then
+			return vLink
+		end
+
+		return
+	end
+
+	if pTooltip.GetItem then
+		local _, vLink = pTooltip:GetItem()
+		return vLink
+	end
+end
+----------------------------------------
+
 function Outfitter._ExtendedCompareTooltip:Construct()
 	hooksecurefunc("GameTooltip_ShowCompareItem", function (pShift)
         if not Outfitter.Settings.Options.DisableItemComparisons then
@@ -7455,7 +7511,7 @@ end
 function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 	self:HideCompareItems()
 
-	local _, vLink = GameTooltip:GetItem()
+	local vLink = Outfitter:GetTooltipItemLink(GameTooltip)
 
 	-- The link is secret for items the game is hiding (dungeon/raid loot), in
 	-- which case there's nothing we can compare against
@@ -7497,10 +7553,16 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 	-- append the 'used by' info on shopping tooltips
 
 	self.AnchorToTooltip = nil
+	local vAnchorEdge
 
 	for vIndex, vShoppingTooltip in ipairs(GameTooltip.shoppingTooltips) do
-		if OutfitterAPI.IsWoW1002 then Mixin(vShoppingTooltip, GameTooltipDataMixin) end
-		local _, vShoppingLink = vShoppingTooltip:GetItem()
+		-- Deliberately not mixing GameTooltipDataMixin onto these.  ShoppingTooltip1
+		-- and 2 inherit ShoppingTooltipTemplate, which already carries
+		-- TooltipDataHandlerMixin, so it was redundant -- and copying the mixin on
+		-- from here replaced Blizzard's own methods on their frames with tainted
+		-- copies, which is what made their comparison code blow up doing arithmetic
+		-- on the secret width of CompareHeader
+		local vShoppingLink = Outfitter:GetTooltipItemLink(vShoppingTooltip)
 		local vShoppingItemInfo = Outfitter:GetItemInfoFromLink(vShoppingLink)
 
 		if vShoppingItemInfo then
@@ -7508,9 +7570,32 @@ function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
 			vShoppingTooltip:Show()
 		end
 
-		-- Keep the first shopping tooltip for an anchor since it's the one Blizzard positions at the end
-		if not self.AnchorToTooltip then
-			self.AnchorToTooltip = vShoppingTooltip
+		-- Anchor to whichever of Blizzard's tooltips sits furthest out in the
+		-- direction we're stacking, so ours carry on past them instead of landing on
+		-- top.  Paired slots such as rings and trinkets show two, and which one ends
+		-- up outermost depends on the side Blizzard picked: stacked to the right it
+		-- puts the secondary nearest and the primary beyond it, stacked to the left
+		-- it's the other way round.  Measuring the edges avoids having to guess
+
+		if vShoppingTooltip:IsShown() then
+			local vEdge
+
+			if self.LeftToRight then
+				vEdge = OutfitterAPI:UnsecretNumber(vShoppingTooltip:GetRight())
+			else
+				vEdge = OutfitterAPI:UnsecretNumber(vShoppingTooltip:GetLeft())
+			end
+
+			-- With no readable geometry, fall back to the last one shown
+
+			if not self.AnchorToTooltip
+			or not vEdge
+			or not vAnchorEdge
+			or (self.LeftToRight and vEdge > vAnchorEdge)
+			or (not self.LeftToRight and vEdge < vAnchorEdge) then
+				self.AnchorToTooltip = vShoppingTooltip
+				vAnchorEdge = vEdge
+			end
 		end
 	end
 
@@ -7599,7 +7684,7 @@ function Outfitter._ExtendedCompareTooltip:ItemsAreEquivalent(pItemInfo1, pItemI
 end
 
 function Outfitter._ExtendedCompareTooltip:ShoppingItemIsShown(pItemInfo)
-	local _, vTooltipLink = GameTooltip:GetItem()
+	local vTooltipLink = Outfitter:GetTooltipItemLink(GameTooltip)
 	local vTooltipItemInfo = Outfitter:GetItemInfoFromLink(vTooltipLink)
 
 	if not vTooltipItemInfo then
@@ -7623,9 +7708,9 @@ function Outfitter._ExtendedCompareTooltip:ShoppingItemIsShown(pItemInfo)
 			break
 		end
 
-		if OutfitterAPI.IsWoW1002 then Mixin(vTooltip, GameTooltipDataMixin) end
+		-- No Mixin here either, for the reason given in ShowCompareItem
 
-		local _, vTooltipLink = vTooltip:GetItem()
+		local vTooltipLink = Outfitter:GetTooltipItemLink(vTooltip)
 		local vTooltipItemInfo = Outfitter:GetItemInfoFromLink(vTooltipLink)
 
 		--Outfitter:DebugMessage("ShoppingLinkIsShown: Comparing ShoppingTooltip%d %s to %s", vIndex, tostring(vTooltipLink):gsub("|", "||"), tostring(vLink):gsub("|", "||"))
@@ -7641,7 +7726,7 @@ function Outfitter._ExtendedCompareTooltip:ShoppingItemIsShown(pItemInfo)
 			break
 		end
 
-		local _, vTooltipLink = vTooltip:GetItem()
+		local vTooltipLink = Outfitter:GetTooltipItemLink(vTooltip)
 		local vTooltipItemInfo = Outfitter:GetItemInfoFromLink(vTooltipLink)
 
 		--Outfitter:DebugMessage("ShoppingLinkIsShown: Comparing OutfitterShoppingTooltip%d %s to %s", vIndex, tostring(vTooltipLink):gsub("|", "||"), tostring(vLink):gsub("|", "||"))

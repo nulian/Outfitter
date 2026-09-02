@@ -1150,9 +1150,16 @@ end
 -- $SETTING Health="number"
 -- $SETTING Mana="number"
 
+-- Health is secret to addons since 12.1 and comparing a secret number raises an
+-- error, so read every value defensively and treat whatever the game won't hand
+-- back as "not low" instead of testing it
+local health = OutfitterAPI:UnsecretNumber(UnitHealth("player"))
+local powerType = OutfitterAPI:UnsecretNumber(UnitPowerType("player"))
+local power = OutfitterAPI:UnsecretNumber(UnitPower("player"))
+
 if select(1, ...) == "player"
-and (UnitHealth("player") < setting.Health
- or (UnitPowerType("player") == 0 and UnitPower("player") < setting.Mana)) then
+and ((health and setting.Health and health < setting.Health)
+ or (powerType == 0 and power and setting.Mana and power < setting.Mana)) then
    equip = true
 elseif didEquip then
    equip = false

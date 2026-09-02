@@ -631,7 +631,7 @@ function Outfitter.TankPoints_New()
 	Outfitter.Stats_AddStatValue(vTankPointData.BaseStats, "Intellect", UnitStat("player", 4))
 	Outfitter.Stats_AddStatValue(vTankPointData.BaseStats, "Spirit", UnitStat("player", 5))
 	
-	Outfitter.Stats_AddStatValue(vTankPointData.BaseStats, "Health", UnitHealthMax("player"))
+	Outfitter.Stats_AddStatValue(vTankPointData.BaseStats, "Health", OutfitterAPI:UnsecretNumber(UnitHealthMax("player"), 0))
 	
 	vTankPointData.BaseStats.Health = vTankPointData.BaseStats.Health - vTankPointData.BaseStats.Stamina * 10
 	
