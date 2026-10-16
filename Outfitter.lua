@@ -1624,6 +1624,148 @@ function Outfitter:SetPaneContentsShown(pPane, pShown)
 	end
 end
 
+-- The outfit list is a FauxScrollFrame, whose classic scroll bar is too wide
+-- for the sidebar.  There it's hidden and Blizzard's MinimalScrollBar (the one
+-- the equipment manager and titles lists use) stands in, mirroring the faux
+-- scroll frame's offset.  The faux scroll frame still does the scrolling, so
+-- mouse wheel scrolling over the list carries on working as it always has
+
+function Outfitter:GetModernScrollBar()
+	if self.ModernScrollBar ~= nil then
+		return self.ModernScrollBar or nil
+	end
+
+	self.ModernScrollBar = false
+
+	if not BaseScrollBoxEvents
+	or not C_XMLUtil or not C_XMLUtil.GetTemplateInfo
+	or not C_XMLUtil.GetTemplateInfo("MinimalScrollBar") then
+		return
+	end
+
+	local vScrollBar = CreateFrame("EventFrame", "OutfitterMainFrameModernScrollBar", OutfitterMainFrame, "MinimalScrollBar")
+
+	if not vScrollBar.SetVisibleExtentPercentage
+	or not vScrollBar.SetPanExtentPercentage
+	or not vScrollBar.SetScrollPercentage
+	or not vScrollBar.RegisterCallback then
+		vScrollBar:Hide()
+		return
+	end
+
+	vScrollBar:RegisterCallback(BaseScrollBoxEvents.OnScroll, function (_, pPercentage)
+		self:ModernScrollBar_OnScroll(pPercentage)
+	end, self)
+
+	self.ModernScrollBar = vScrollBar
+
+	return vScrollBar
+end
+
+function Outfitter:UpdateModernScrollBar(pTotalItems)
+	self.ListTotalItems = pTotalItems
+
+	local vScrollBar = self.EmbeddedPane and self:GetModernScrollBar()
+
+	if not vScrollBar then
+		return
+	end
+
+	-- FauxScrollFrame_Update shows the classic bar again on every update
+	local vClassicScrollBar = OutfitterMainFrameScrollFrame.ScrollBar or _G.OutfitterMainFrameScrollFrameScrollBar
+
+	if vClassicScrollBar then
+		vClassicScrollBar:Hide()
+	end
+
+	local vScrollRange = pTotalItems - self.cMaxDisplayedItems
+
+	if vScrollRange <= 0 then
+		vScrollBar:Hide()
+		return
+	end
+
+	self.UpdatingModernScrollBar = true
+
+	-- Only resize the thumb when the list's length has actually changed
+
+	local vVisibleExtent = self.cMaxDisplayedItems / pTotalItems
+
+	if self.ModernScrollBarRange ~= vScrollRange
+	or self.ModernScrollBarVisibleExtent ~= vVisibleExtent then
+		self.ModernScrollBarRange = vScrollRange
+		self.ModernScrollBarVisibleExtent = vVisibleExtent
+
+		vScrollBar:SetVisibleExtentPercentage(vVisibleExtent)
+		vScrollBar:SetPanExtentPercentage(1 / vScrollRange)
+	end
+
+	-- When the scroll came from the bar itself, leave its thumb where the user
+	-- has it.  Snapping it back to the nearest whole row mid-drag fights the drag
+	-- and sets the list redrawing on every frame
+
+	if not self.ScrollingFromModernBar then
+		vScrollBar:SetScrollPercentage(FauxScrollFrame_GetOffset(OutfitterMainFrameScrollFrame) / vScrollRange,
+				ScrollBoxConstants and ScrollBoxConstants.NoScrollInterpolation)
+	end
+
+	vScrollBar:Show()
+
+	self.UpdatingModernScrollBar = nil
+end
+
+-- The bar reports its position continuously while it's dragged or animating,
+-- often several times a frame, and every row it moves means a full list
+-- update.  So keep only the latest position and apply it once per frame
+
+function Outfitter:ModernScrollBar_OnScroll(pPercentage)
+	if self.UpdatingModernScrollBar or not self.EmbeddedPane then
+		return
+	end
+
+	self.PendingScrollPercentage = pPercentage
+
+	if self.ModernScrollScheduled then
+		return
+	end
+
+	self.ModernScrollScheduled = true
+
+	C_Timer.After(0, function ()
+		self.ModernScrollScheduled = nil
+		self:ApplyModernScroll()
+	end)
+end
+
+function Outfitter:ApplyModernScroll()
+	local vPercentage = self.PendingScrollPercentage
+
+	self.PendingScrollPercentage = nil
+
+	if not vPercentage or not self.EmbeddedPane or not OutfitterFrame:IsVisible() then
+		return
+	end
+
+	local vScrollRange = (self.ListTotalItems or 0) - self.cMaxDisplayedItems
+
+	if vScrollRange <= 0 then
+		return
+	end
+
+	local vOffset = math.floor(vPercentage * vScrollRange + 0.5)
+
+	if vOffset == FauxScrollFrame_GetOffset(OutfitterMainFrameScrollFrame) then
+		return
+	end
+
+	self.ScrollingFromModernBar = true
+
+	FauxScrollFrame_OnVerticalScroll(OutfitterMainFrameScrollFrame,
+			vOffset * self.cListItemHeight, self.cListItemHeight, Outfitter.OnVerticalScroll)
+
+	self.ScrollingFromModernBar = nil
+end
+
 -- The XML only defines the 14 rows the floating window has room for, so add
 -- more when the frame is taller than that, chained on below the last one
 
@@ -1675,7 +1817,17 @@ function Outfitter:UpdateFrameLayout()
 	end
 
 	local vListTop = vEmbedded and self.cEmbeddedListTop or self.cFloatingListTop
-	local vRowWidth = vWidth - 32
+	local vModernScrollBar = vEmbedded and self:GetModernScrollBar()
+	local vRowWidth
+
+	-- In the sidebar, use the same slim scroll bar as Blizzard's own sidebar
+	-- lists, which leaves the rows more room than the classic bar and its trench
+
+	if vModernScrollBar then
+		vRowWidth = vWidth - 1 - vModernScrollBar:GetWidth() - 8
+	else
+		vRowWidth = vWidth - 32
+	end
 
 	self:CreateListItems(vNumRows)
 
@@ -1733,6 +1885,15 @@ function Outfitter:UpdateFrameLayout()
 	OutfitterMainFrameScrollbarTrench:ClearAllPoints()
 	OutfitterMainFrameScrollbarTrench:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPLEFT", vWidth - 3, 5 - vListTop)
 	OutfitterMainFrameScrollbarTrench:SetHeight(vNumRows * self.cListItemHeight + 6)
+	OutfitterMainFrameScrollbarTrench:SetShown(not vModernScrollBar)
+
+	if vModernScrollBar then
+		vModernScrollBar:ClearAllPoints()
+		vModernScrollBar:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPRIGHT", -4, -vListTop)
+		vModernScrollBar:SetHeight(vNumRows * self.cListItemHeight)
+	elseif self.ModernScrollBar then
+		self.ModernScrollBar:Hide()
+	end
 
 	OutfitterMainFrameButtonBarBackground:SetWidth(vWidth - 3)
 
@@ -3602,6 +3763,13 @@ function Outfitter:Update(pOutfitsChanged)
 		wipe(self.OutfitInfoCache)
 	end
 
+	-- Anything but a scroll may mean the outfits or bags changed, so the list
+	-- has to be built again (even if it isn't shown right now)
+
+	if not self.ScrollOnlyUpdate then
+		self.ListData = nil
+	end
+
 	-- Just leave if we're not visible (when does this happen?)
 
 	if not OutfitterFrame:IsVisible() then
@@ -3619,22 +3787,59 @@ function Outfitter:Update(pOutfitsChanged)
 
 		self.DisplayIsDirty = false
 
-		-- Sort the outfits
+		-- Building the list's contents means scanning every bag slot and every
+		-- outfit item, which is far too slow to repeat for each row scrolled.
+		-- Scrolling doesn't change any of it, so a scroll reuses what the last
+		-- full update built and only redraws the rows
 
-		self:SortOutfits()
+		local vInventoryCache, vWarboundItems, vBoEItems
+		local vListData = self.ScrollOnlyUpdate and self.ListData
 
-		-- Get the equippable items so outfits can be marked if they're missing anything
+		if vListData then
+			vInventoryCache = vListData.InventoryCache
+			vWarboundItems = vListData.WarboundItems
+			vBoEItems = vListData.BoEItems
+		else
+			-- Sort the outfits
 
-		local vInventoryCache = self:GetInventoryCache()
+			self:SortOutfits()
 
-		-- Update the slot enables if they're shown
+			-- Get the equippable items so outfits can be marked if they're missing anything
 
-		if pOutfitsChanged
-		and OutfitterSlotEnables:IsVisible() then
-			self:UpdateSlotEnables(self.SelectedOutfit, vInventoryCache)
+			vInventoryCache = self:GetInventoryCache()
+
+			-- Update the slot enables if they're shown
+
+			if pOutfitsChanged
+			and OutfitterSlotEnables:IsVisible() then
+				self:UpdateSlotEnables(self.SelectedOutfit, vInventoryCache)
+			end
+
+			vInventoryCache:CompiledUnusedItemsList()
+
+			if vInventoryCache.UnusedItems then
+				table.sort(vInventoryCache.UnusedItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			vWarboundItems = vInventoryCache:GetWarboundItems()
+
+			if vWarboundItems then
+				table.sort(vWarboundItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			vBoEItems = vInventoryCache:GetBoEItems()
+
+			if vBoEItems then
+				table.sort(vBoEItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			self.ListData =
+			{
+				InventoryCache = vInventoryCache,
+				WarboundItems = vWarboundItems,
+				BoEItems = vBoEItems,
+			}
 		end
-
-		vInventoryCache:CompiledUnusedItemsList()
 
 		-- Update the list
 
@@ -3655,23 +3860,18 @@ function Outfitter:Update(pOutfitsChanged)
 
 		if vItemIndex < self.cMaxDisplayedItems
 		and vInventoryCache.UnusedItems then
-			table.sort(vInventoryCache.UnusedItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vInventoryCache.UnusedItems, "OddsNEnds", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the Warbound until equipped items
-		local vWarboundItems = vInventoryCache:GetWarboundItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vWarboundItems and #vWarboundItems > 0 then
-			table.sort(vWarboundItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vWarboundItems, "Warbound", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the BoEs
-		local vBoEItems = vInventoryCache:GetBoEItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vBoEItems and #vBoEItems > 0 then
-			table.sort(vBoEItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vBoEItems, "BoEs", vItemIndex, vFirstItemIndex)
 		end
 
@@ -3735,6 +3935,8 @@ function Outfitter:Update(pOutfitsChanged)
 				nil, nil, nil,                  -- button, smallWidth, bigWidth
 				nil,                            -- highlightFrame
 				0, 0)                           -- smallHighlightWidth, bigHighlightWidth
+
+		self:UpdateModernScrollBar(vTotalNumItems)
 	elseif self.CurrentPanel == 2 then -- Options panel
 		OutfitterAutoSwitch:SetChecked(self.Settings.Options.DisableAutoSwitch)
 		OutfitterShowMinimapButton:SetChecked(not self.Settings.Options.MinimapButton.hide)
@@ -3748,7 +3950,11 @@ end
 
 function Outfitter.OnVerticalScroll(pScrollFrame)
 	Outfitter.DisplayIsDirty = true
+
+	-- Only the visible rows change, so let Update reuse the list it last built
+	Outfitter.ScrollOnlyUpdate = true
 	Outfitter:Update(false)
+	Outfitter.ScrollOnlyUpdate = nil
 end
 
 function Outfitter:SelectOutfit(pOutfit)
