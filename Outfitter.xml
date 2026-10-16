@@ -1,7 +1,7 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
 
-	<Button name="OutfitterTabTemplate" inherits="CharacterFrameTabTemplate" virtual="true">
+	<Button name="OutfitterTabTemplate" inherits="PanelTabButtonTemplate" virtual="true">
 		<Scripts>
 			<OnClick>
 				PlaySound(SOUNDKIT.IG_MAINMENU_OPEN)
@@ -641,7 +641,7 @@
 									</Anchors>
 									<TexCoords left="0" right="1.0" top="0" bottom="0.578125"/>
 								</Texture>
-								<FontString text="Outfitter_cTitle" inherits="GameFontNormalLarge">
+								<FontString name="$parentTitle" text="Outfitter_cTitle" inherits="GameFontNormalLarge">
 									<Anchors>
 										<Anchor point="TOP">
 											<Offset>
@@ -825,7 +825,7 @@
 								</Texture>
 							</Layer>
 							<Layer level="OVERLAY">
-								<FontString text="Outfitter_cOptionsTitle" inherits="GameFontNormalLarge">
+								<FontString name="$parentTitle" text="Outfitter_cOptionsTitle" inherits="GameFontNormalLarge">
 									<Anchors>
 										<Anchor point="TOP">
 											<Offset>
@@ -990,6 +990,33 @@
 											Outfitter.AddNewbieTip(self, Outfitter.cItemComparisons, 1.0, 1.0, 1.0, Outfitter.cItemComparisonsOnDescription, 1)
 										else
 											Outfitter.AddNewbieTip(self, Outfitter.cItemComparisons, 1.0, 1.0, 1.0, Outfitter.cItemComparisonsOffDescription, 1)
+										end
+									</OnEnter>
+									<OnLeave>
+										GameTooltip:Hide()
+									</OnLeave>
+								</Scripts>
+							</CheckButton>
+							<CheckButton name="OutfitterReplaceEquipmentTab" inherits="OutfitterCheckboxTemplate">
+								<Anchors>
+									<Anchor point="TOPLEFT" relativeTo="OutfitterItemComparisons" relativePoint="BOTTOMLEFT">
+										<Offset>
+											<AbsDimension x="0" y="-5"/>
+										</Offset>
+									</Anchor>
+								</Anchors>
+								<Scripts>
+									<OnLoad>
+										getglobal(self:GetName().."Text"):SetText(Outfitter.cReplaceEquipmentTab)
+									</OnLoad>
+									<OnClick>
+										Outfitter:SetReplaceEquipmentTab(self:GetChecked())
+									</OnClick>
+									<OnEnter>
+										if self:GetChecked() then
+											Outfitter.AddNewbieTip(self, Outfitter.cReplaceEquipmentTab, 1.0, 1.0, 1.0, Outfitter.cReplaceEquipmentTabOnDescription, 1)
+										else
+											Outfitter.AddNewbieTip(self, Outfitter.cReplaceEquipmentTab, 1.0, 1.0, 1.0, Outfitter.cReplaceEquipmentTabOffDescription, 1)
 										end
 									</OnEnter>
 									<OnLeave>
@@ -1449,7 +1476,7 @@
 		</Frames>
 	</ScrollFrame>
 
-	<Button name="OutfitterScriptTabTemplate" inherits="CharacterFrameTabTemplate" virtual="true">
+	<Button name="OutfitterScriptTabTemplate" inherits="PanelTabButtonTemplate" virtual="true">
 		<Scripts>
 			<OnClick>
 				local vTab = self:GetParent()

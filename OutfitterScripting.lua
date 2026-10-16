@@ -1216,7 +1216,10 @@ if equip == nil and didEquip then equip = false end
 
 if select(1, ...) ~= "player" then return end
 
-if UnitDebuff("player", setting.debuffName) then
+-- Look the debuff up by name (UnitDebuff no longer exists)
+if setting.debuffName
+and setting.debuffName ~= ""
+and C_UnitAuras.GetAuraDataBySpellName("player", setting.debuffName, "HARMFUL") then
     equip = true
 end
 
@@ -1600,76 +1603,64 @@ end
 -- $EVENTS ACTIVE_TALENT_GROUP_CHANGED
 -- $DESC Equips the outfit when you're in a 5 player party instance
 
-local bestMapID = C_Map.GetBestMapForUnit("PLAYER")
+-- Instances are matched by the instance ID from GetInstanceInfo since
+-- GetMapNameByID no longer exists
+local anyDifficulty = {
+    [389] = true, -- Ragefire Chasm
+    [36] = true, -- The Deadmines
+    [43] = true, -- Wailing Caverns
+    [33] = true, -- Shadowfang Keep
+    [48] = true, -- Blackfathom Deeps
+    [34] = true, -- The Stockade
+    [90] = true, -- Gnomeregan
+    [1001] = true, -- Scarlet Halls
+    [1004] = true, -- Scarlet Monastery
+    [47] = true, -- Razorfen Kraul
+    [349] = true, -- Maraudon
+    [70] = true, -- Uldaman
+    [1007] = true, -- Scholomance
+    [129] = true, -- Razorfen Downs
+    [429] = true, -- Dire Maul
+    [329] = true, -- Stratholme
+    [209] = true, -- Zul'Farrak
+    [230] = true, -- Blackrock Depths
+    [109] = true, -- Temple of Atal'Hakkar
+    [229] = true, -- Blackrock Spire
+    [619] = true, -- Ahn'kahet: The Old Kingdom
+    [601] = true, -- Azjol-Nerub
+    [600] = true, -- Drak'Tharon Keep
+    [604] = true, -- Gundrak
+    [599] = true, -- Halls of Stone
+    [576] = true, -- The Nexus
+    [574] = true, -- Utgarde Keep
+    [608] = true, -- Violet Hold
+}
+local heroicOnly = {
+    [543] = true, -- Hellfire Ramparts
+    [542] = true, -- The Blood Furnace
+    [540] = true, -- Shattered Halls
+    [547] = true, -- The Slave Pens
+    [546] = true, -- The Underbog
+    [545] = true, -- The Steamvault
+    [557] = true, -- Mana-Tombs
+    [558] = true, -- Auchenai Crypts
+    [555] = true, -- Shadow Labyrinth
+    [560] = true, -- Old Hillsbrad Foothills
+    [556] = true, -- Sethekk Halls
+    [554] = true, -- The Mechanar
+    [553] = true, -- The Botanica
+    [269] = true, -- Black Morass
+    [552] = true, -- The Arcatraz
+    [585] = true, -- Magisters' Terrace
+}
 
-if bestMapID == 213 -- Ragefire Chasm
-    or name == GetMapNameByID(756) -- The Deadmines
-    or name == GetMapNameByID(749) -- Wailing Caverns
-    or name == GetMapNameByID(764) -- Shadowfang Keep
-    or name == GetMapNameByID(688) -- Blackfathom Deeps
-    or name == GetMapNameByID(690) -- The Stockade
-    or name == GetMapNameByID(691) -- Gnomeregan
-    or name == GetMapNameByID(871) -- Scarlet Halls
-    or name == GetMapNameByID(874) -- Scarlet Monastery
-    or name == GetMapNameByID(761) -- Razorfen Kraul
-    or name == GetMapNameByID(750) -- Maraudon
-    or name == GetMapNameByID(692) -- Uldaman
-    or name == GetMapNameByID(898) -- Scholomance
-    or name == GetMapNameByID(760) -- Razorfen Downs
-    or name == GetMapNameByID(699) -- Dire Maul
-    or name == GetMapNameByID(765) -- Stratholme
-    or name == GetMapNameByID(686) -- Zul'Farrak
-    or name == GetMapNameByID(704) -- Blackrock Depths
-    or name == GetMapNameByID(687) -- Temple of Atal'Hakkar
-    or name == GetMapNameByID(721) -- Blackrock Spire
-    or name == GetMapNameByID(797) -- Hellfire Ramparts
-    or name == GetMapNameByID(725) -- The Blood Furnace
-    or name == GetMapNameByID(710) -- Shattered Halls
-    or name == GetMapNameByID(728) -- The Slave Pens
-    or name == GetMapNameByID(726) -- The Underbog
-    or name == GetMapNameByID(727) -- The Steamvault
-    or name == GetMapNameByID(732) -- Mana-Tombs
-    or name == GetMapNameByID(722) -- Auchenai Crypts
-    or name == GetMapNameByID(724) -- Shadow Labyrinth
-    or name == GetMapNameByID(734) -- Old Hillsbrad Foothills
-    or name == GetMapNameByID(723) -- Sethekk Halls
-    or name == GetMapNameByID(730) -- The Mechanar
-    or name == GetMapNameByID(729) -- The Botanica
-    or name == GetMapNameByID(733) -- Black Morass
-    or name == GetMapNameByID(731) -- The Arcatraz
-    or name == GetMapNameByID(798) -- Magisters' Terrace
-    or name == GetMapNameByID(522) -- Ahn'kahet: The Old Kingdom
-    or name == GetMapNameByID(533) -- Azjol-Nerub
-    or name == GetMapNameByID(534) -- Drak'Tharon Keep
-    or name == GetMapNameByID(530) -- Gundrak
-    or name == GetMapNameByID(526) -- Halls of Stone
-    or name == GetMapNameByID(520) -- The Nexus
-    or name == GetMapNameByID(523) -- Utgarde Keep
-    or name == GetMapNameByID(536) -- Violet Hold
-    or (difficulty == 2
-    and (name == GetMapNameByID(797) -- Hellfire Ramparts
-        or name == GetMapNameByID(725) -- The Blood Furnace
-        or name == GetMapNameByID(710) -- Shattered Halls
-        or name == GetMapNameByID(728) -- The Slave Pens
-        or name == GetMapNameByID(726) -- The Underbog
-        or name == GetMapNameByID(727) -- The Steamvault
-        or name == GetMapNameByID(732) -- Mana-Tombs
-        or name == GetMapNameByID(722) -- Auchenai Crypts
-        or name == GetMapNameByID(724) -- Shadow Labyrinth
-        or name == GetMapNameByID(734) -- Old Hillsbrad Foothills
-        or name == GetMapNameByID(723) -- Sethekk Halls
-        or name == GetMapNameByID(730) -- The Mechanar
-        or name == GetMapNameByID(729) -- The Botanica
-        or name == GetMapNameByID(733) -- Black Morass
-        or name == GetMapNameByID(731) -- The Arcatraz
-        or name == GetMapNameByID(798) -- Magisters' Terrace
-        ))) then
-    equip = true
-else
-    equip = false
-end
+local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+
+equip = instanceType == "party"
+    and (anyDifficulty[instanceID] or (difficultyID == 2 and heroicOnly[instanceID]))
+    and true or false
 ]],
-    },    
+    },
     {
         Name = "Championing WotLK",
         ID = "CHAMP",
@@ -1680,39 +1671,34 @@ end
 -- $EVENTS ACTIVE_TALENT_GROUP_CHANGED
 -- $DESC Equips the outfit when you're in a 5 player level 70-75 party instance
 
-local name, instanceType, difficultyIndex, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, mapID = GetInstanceInfo()
+-- Instances are matched by the instance ID from GetInstanceInfo since
+-- GetMapNameByID no longer exists
+local anyDifficulty = {
+    [578] = true, -- The Oculus
+    [602] = true, -- Halls of Lightning
+    [575] = true, -- Utgarde Pinnacle
+    [595] = true, -- Culling of Stratholme
+    [650] = true, -- Trial of the Champion
+    [632] = true, -- The Forge of Souls
+    [658] = true, -- Pit of Saron
+    [668] = true, -- Halls of Reflection
+}
+local heroicOnly = {
+    [619] = true, -- Ahn'kahet: The Old Kingdom
+    [601] = true, -- Azjol-Nerub
+    [600] = true, -- Drak'Tharon Keep
+    [604] = true, -- Gundrak
+    [599] = true, -- Halls of Stone
+    [576] = true, -- The Nexus
+    [574] = true, -- Utgarde Keep
+    [608] = true, -- Violet Hold
+}
 
-if type == "solo" or "party"
-        and (name == GetMapNameByID(528) -- The Oculus
-        or name == GetMapNameByID(525) -- Halls of Lightning
-        or name == GetMapNameByID(524) -- Utgarde Pinnacle
-        or name == GetMapNameByID(521) -- Culling of Stratholme
-        or name == GetMapNameByID(542) -- Trial of the Champion
-        or name == GetMapNameByID(601) -- The Forge of Souls
-        or name == GetMapNameByID(602) -- Pit of Saron
-        or name == GetMapNameByID(603) -- Halls of Reflection
-        or (difficulty == 2
-        and (name == GetMapNameByID(522) -- Ahn'kahet: The Old Kingdom
-            or name == GetMapNameByID(533) -- Azjol-Nerub
-            or name == GetMapNameByID(534) -- Drak'Tharon Keep
-            or name == GetMapNameByID(530) -- Gundrak
-            or name == GetMapNameByID(526) -- Halls of Stone
-            or name == GetMapNameByID(520) -- The Nexus
-            or name == GetMapNameByID(523) -- Utgarde Keep
-            or name == GetMapNameByID(536) -- Violet Hold
-            or name == GetMapNameByID(528) -- The Oculus
-            or name == GetMapNameByID(525) -- Halls of Lightning
-            or name == GetMapNameByID(524) -- Utgarde Pinnacle
-            or name == GetMapNameByID(521) -- Culling of Stratholme
-            or name == GetMapNameByID(542) -- Trial of the Champion
-            or name == GetMapNameByID(601) -- The Forge of Souls
-            or name == GetMapNameByID(602) -- Pit of Saron
-            or name == GetMapNameByID(603) -- Halls of Reflection
-            ))) then
-        equip = true
-    else
-        equip = false
-end
+local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+
+equip = instanceType == "party"
+    and (anyDifficulty[instanceID] or (difficultyID == 2 and heroicOnly[instanceID]))
+    and true or false
 ]],
     },
     {
@@ -1725,46 +1711,41 @@ end
 -- $EVENTS ACTIVE_TALENT_GROUP_CHANGED
 -- $DESC Equips the outfit when you're in a 5 player level 85-90 party instance
 
-local name, instanceType, difficultyIndex, difficultyName, maxPlayers, dynamicDifficulty, isDynamic, mapID = GetInstanceInfo()
+-- Instances are matched by the instance ID from GetInstanceInfo since
+-- GetMapNameByID no longer exists
+local anyDifficulty = {
+    [755] = true, -- Lost City of the Tol'vir
+    [644] = true, -- Halls of Origination
+    [670] = true, -- Grim Batol
+    [960] = true, -- Temple of the Jade Serpent
+    [961] = true, -- Stormstout Brewery
+    [994] = true, -- Mogu'Shan Palace
+    [959] = true, -- Shado-pan Monastery
+    [1011] = true, -- Siege of Niuzao Temple
+}
+local heroicOnly = {
+    [36] = true, -- The Deadmines
+    [33] = true, -- Shadowfang Keep
+    [645] = true, -- Blackrock Caverns
+    [643] = true, -- Throne of the Tides
+    [725] = true, -- The Stonecore
+    [657] = true, -- The Vortex Pinnacle
+    [859] = true, -- Zul'Gurub
+    [568] = true, -- Zul'Aman
+    [938] = true, -- End Time
+    [939] = true, -- Well of Eternity
+    [940] = true, -- Hour of Twilight
+    [1001] = true, -- Scarlet Halls
+    [1004] = true, -- Scarlet Monastery
+    [1007] = true, -- Scholomance
+    [962] = true, -- Gate of the Setting Sun
+}
 
-if type == "solo" or "party"
-        and (name == GetMapNameByID(747) -- Lost City of the Tol'vir
-        or name == GetMapNameByID(759) -- Halls of Origination
-        or name == GetMapNameByID(757) -- Grim Batol
-        or name == GetMapNameByID(867) -- Temple of the Jade Serpent
-        or name == GetMapNameByID(876) -- Stormstout Brewery
-        or name == GetMapNameByID(885) -- Mogu'Shan Palace
-        or name == GetMapNameByID(877) -- Shado-pan Monastery
-        or name == GetMapNameByID(887) -- Siege of Niuzao Temple
-        or (difficulty == 2
-        and (name == GetMapNameByID(756) -- The Deadmines
-            or name == GetMapNameByID(764) -- Shadowfang Keep
-            or name == GetMapNameByID(753) -- Blackrock Caverns
-            or name == GetMapNameByID(767) -- Throne of the Tides
-            or name == GetMapNameByID(768) -- The Stonecore
-            or name == GetMapNameByID(769) -- The Vortex Pinnacle
-            or name == GetMapNameByID(747) -- Lost City of the Tol'vir
-            or name == GetMapNameByID(759) -- Halls of Origination
-            or name == GetMapNameByID(757) -- Grim Batol
-            or name == GetMapNameByID(781) -- Zul'Gurub
-            or name == GetMapNameByID(793) -- Zul'Aman
-            or name == GetMapNameByID(820) -- End Time
-            or name == GetMapNameByID(816) -- Well of Eternity
-            or name == GetMapNameByID(819) -- Hour of Twilight
-            or name == GetMapNameByID(867) -- Temple of the Jade Serpent
-            or name == GetMapNameByID(876) -- Stormstout Brewery
-            or name == GetMapNameByID(885) -- Mogu'Shan Palace
-            or name == GetMapNameByID(877) -- Shado-pan Monastery
-            or name == GetMapNameByID(887) -- Siege of Niuzao Temple            
-            or name == GetMapNameByID(871) -- Scarlet Halls
-            or name == GetMapNameByID(874) -- Scarlet Monastery
-            or name == GetMapNameByID(898) -- Scholomance
-            or name == GetMapNameByID(875) -- Gate of the Setting Sun
-            ))) then
-        equip = true
-    else
-        equip = false
-end
+local _, instanceType, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
+
+equip = instanceType == "party"
+    and (anyDifficulty[instanceID] or (difficultyID == 2 and heroicOnly[instanceID]))
+    and true or false
 ]],
     },
 	{
@@ -1856,6 +1837,7 @@ function Outfitter:InitializeScripts()
 end
 
 Outfitter.cScriptPrefix = [[
+	local GetSpecialization, GetSpecializationInfo = function (...) return OutfitterAPI:GetSpecialization(...) end, function (...) return OutfitterAPI:GetSpecializationInfo(...) end
 	return function (self, event, ...)
 		local outfit = self.Outfit
 		if outfit.Disabled or (outfit.CombatDisabled and (Outfitter.InCombat or Outfitter.MaybeInCombat)) then return end

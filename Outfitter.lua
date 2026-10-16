@@ -1173,14 +1173,985 @@ Outfitter.cShapeshiftIDInfo = {
 
 function Outfitter:ToggleOutfitterFrame()
 	if self:IsOpen() then
-		OutfitterFrame:Hide()
+		self:HideOutfitterFrame()
+	else
+		self:ShowOutfitterFrame()
+	end
+end
+
+-- While Outfitter sits in the character sheet's sidebar its visibility follows
+-- Blizzard's equipment manager pane, so showing or hiding it means switching
+-- the sidebar rather than showing or hiding the frame itself
+
+function Outfitter:ShowOutfitterFrame()
+	if self.EmbeddedPane then
+		self:SelectSidebar(self.EquipmentManagerTabIndex)
 	else
 		OutfitterFrame:Show()
 	end
 end
 
+function Outfitter:HideOutfitterFrame()
+	if self.EmbeddedPane then
+		if self.EmbeddedPane:IsShown() then
+			self:SelectSidebar(self.PreviousSidebarIndex)
+		end
+	else
+		OutfitterFrame:Hide()
+	end
+end
+
 function Outfitter:IsOpen()
 	return OutfitterFrame:IsVisible()
+end
+
+----------------------------------------
+-- Equipment manager tab
+----------------------------------------
+
+-- Outfitter can take the place of Blizzard's equipment manager in the
+-- character sheet's sidebar.  OutfitterFrame is parented to the equipment
+-- manager pane and covers it, so Blizzard's own sidebar tab shows and hides
+-- it and it follows the pane wherever Blizzard (or a UI skin) puts it.  None
+-- of Blizzard's frames are moved or have their scripts replaced, since the
+-- character frame is positioned by the secure panel manager and is easily
+-- broken by addon code touching its layout; the pane's own contents are only
+-- faded out underneath
+
+Outfitter.cFloatingFrameWidth = 256
+Outfitter.cFloatingFrameHeight = 344
+Outfitter.cFloatingListTop = 63
+Outfitter.cEmbeddedListTop = 8
+Outfitter.cListItemHeight = 18
+Outfitter.cEquipmentTabIconScale = 0.62 -- Outfitter's icon size relative to the tab's Icon region
+
+function Outfitter:FindEquipmentManagerTab()
+	if not PaperDollFrame_SetSidebar or not PAPERDOLL_SIDEBARS then
+		return
+	end
+
+	for vIndex, vSidebar in ipairs(PAPERDOLL_SIDEBARS) do
+		if (PAPERDOLL_EQUIPMENTMANAGER and vSidebar.name == PAPERDOLL_EQUIPMENTMANAGER)
+		or (type(vSidebar.frame) == "string" and vSidebar.frame:find("EquipmentManager")) then
+			return _G["PaperDollSidebarTab"..vIndex], vIndex
+		end
+	end
+end
+
+function Outfitter:InstallEquipmentManagerTab()
+	local vTab, vTabIndex = self:FindEquipmentManagerTab()
+
+	if not vTab or not vTab.Icon then
+		return
+	end
+
+	self.EquipmentManagerTab = vTab
+	self.EquipmentManagerTabIndex = vTabIndex
+	self.PreviousSidebarIndex = 1
+
+	-- Remember which sidebar was showing so it can be put back when Outfitter
+	-- is closed
+
+	hooksecurefunc("PaperDollFrame_SetSidebar", function (pButton, pIndex)
+		if pIndex ~= vTabIndex then
+			self.PreviousSidebarIndex = pIndex
+		end
+	end)
+
+	OutfitterFrame:HookScript("OnSizeChanged", function ()
+		self:UpdateFrameLayout()
+	end)
+
+	-- The gear flyout opens over the sidebar, and Outfitter can't drop any lower
+	-- without uncovering the equipment manager's rows, which are still
+	-- clickable.  Its own controls nest a few levels above it as well, so lift
+	-- the flyout over the whole of Outfitter instead.  Only its level is
+	-- changed; none of Blizzard's flyout code is called from here
+
+	if EquipmentFlyout_Show and EquipmentFlyoutFrame then
+		hooksecurefunc("EquipmentFlyout_Show", function ()
+			self:RaiseEquipmentFlyout()
+		end)
+	end
+
+	-- Skins may restyle the tab after Outfitter has loaded, so check it again
+	-- whenever the character sheet is opened
+
+	PaperDollFrame:HookScript("OnShow", function ()
+		self:UpdateEquipmentTabIcon()
+
+		-- and again once any skin's own OnShow handling has run
+		C_Timer.After(0, function () self:UpdateEquipmentTabIcon() end)
+	end)
+
+	vTab:HookScript("OnEnter", function ()
+		if not self:IsReplacingEquipmentTab() then
+			return
+		end
+
+		GameTooltip:SetText(self.cTitle, 1.0, 1.0, 1.0)
+	end)
+
+	self:UpdateEquipmentManagerTab()
+end
+
+function Outfitter:UpdateEquipmentManagerTab()
+	local vTab = self.EquipmentManagerTab
+
+	if not vTab then
+		return
+	end
+
+	self:UpdateEquipmentTabIcon()
+
+	self:SetEmbeddedInSidebar(self:IsReplacingEquipmentTab())
+end
+
+function Outfitter:UpdateEquipmentTabIcon()
+	local vTab = self.EquipmentManagerTab
+
+	if not vTab then
+		return
+	end
+
+	-- Blizzard's tab icons are cut from a sheet that includes the tab's frame and
+	-- some empty margin, so the Icon region is larger than the box drawn around
+	-- it.  Outfitter's icon is a plain square, so it gets its own smaller texture
+	-- centred on theirs instead of being swapped into their region
+
+	if not vTab.OutfitterIcon then
+		local vIconWidth, vIconHeight = vTab.Icon:GetSize()
+		local vSize = math.floor(math.min(vIconWidth, vIconHeight) * self.cEquipmentTabIconScale + 0.5)
+
+		local vLayer, vSubLevel = vTab.Icon:GetDrawLayer()
+
+		vTab.OutfitterIcon = vTab:CreateTexture(nil, vLayer, nil, vSubLevel)
+		vTab.OutfitterIcon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_21")
+		vTab.OutfitterIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+		vTab.OutfitterIcon:SetSize(vSize, vSize)
+		vTab.OutfitterIcon:SetPoint("CENTER", vTab.Icon, "CENTER", 0, 0)
+	end
+
+	-- Skins which draw the sidebar tabs as text labels (EllesmereUI, for one)
+	-- keep Blizzard's tab seated over the label for its clicks and fade the
+	-- tab's own art out.  There's no box to put an icon in then, so leave the
+	-- tab alone and let the label stand
+
+	local vTabArtHidden = vTab.TabBg ~= nil and vTab.TabBg:GetAlpha() == 0
+	local vShowIcon = self:IsReplacingEquipmentTab() and not vTabArtHidden
+
+	if vTabArtHidden then
+		-- The skin has faded Blizzard's icon itself, so it mustn't be restored
+		self.EquipmentTabIconAlpha = nil
+	elseif vShowIcon then
+		if not self.EquipmentTabIconAlpha then
+			self.EquipmentTabIconAlpha = vTab.Icon:GetAlpha()
+		end
+
+		vTab.Icon:SetAlpha(0)
+	elseif self.EquipmentTabIconAlpha then
+		vTab.Icon:SetAlpha(self.EquipmentTabIconAlpha)
+		self.EquipmentTabIconAlpha = nil
+	end
+
+	vTab.OutfitterIcon:SetShown(vShowIcon)
+end
+
+function Outfitter:GetEquipmentManagerPane()
+	return (PaperDollFrame and PaperDollFrame.EquipmentManagerPane) or _G.PaperDollEquipmentManagerPane
+end
+
+function Outfitter:SelectSidebar(pIndex)
+	local vTab = pIndex and _G["PaperDollSidebarTab"..pIndex]
+
+	if not vTab then
+		return
+	end
+
+	if not CharacterFrame:IsShown() then
+		self:OpenCharacterFrame()
+	end
+
+	PaperDollFrame_SetSidebar(vTab, pIndex)
+end
+
+function Outfitter:SetEmbeddedInSidebar(pEmbed)
+	local vPane = pEmbed and self:GetEquipmentManagerPane()
+
+	if (vPane or nil) == self.EmbeddedPane then
+		return
+	end
+
+	-- The outfit list holds secure action buttons, so it can't be re-parented
+	-- or moved during combat.  Pick it up again once combat ends
+
+	if InCombatLockdown() then
+		self.SidebarLayoutPending = true
+		return
+	end
+
+	self.SidebarLayoutPending = nil
+
+	local vWasOpen = self:IsOpen()
+
+	if vPane then
+		self:SetPaneContentsShown(vPane, false)
+
+		self.EmbeddedPane = vPane
+		self.FramePosition = nil
+
+		OutfitterFrame:SetParent(vPane)
+		self:UpdateEmbeddedFrameLevel()
+		self:SyncFramePosition()
+		OutfitterFrame:Show()
+
+		OutfitterButton:Hide()
+
+		self:SkinWithEllesmere()
+
+		-- Leave the user looking at Outfitter if that's what they were doing
+
+		if vWasOpen then
+			self:SelectSidebar(self.EquipmentManagerTabIndex)
+		end
+	else
+		self:SetPaneContentsShown(self.EmbeddedPane, true)
+
+		self.EmbeddedPane = nil
+		self.FramePosition = nil
+
+		OutfitterFrame:Hide()
+		OutfitterFrame:SetParent(OutfitterButtonFrame)
+		OutfitterFrame:SetSize(self.cFloatingFrameWidth, self.cFloatingFrameHeight)
+		self:SyncFramePosition()
+
+		OutfitterButton:Show()
+
+		if self.EllesmereSkin then
+			self:NoteMessage(self.cReloadToRemoveSkin)
+		end
+
+		-- Leave the user looking at Outfitter if that's what they were doing
+
+		if vWasOpen then
+			self:SelectSidebar(self.PreviousSidebarIndex)
+			OutfitterFrame:Show()
+		end
+	end
+
+	self:UpdateFrameLayout()
+end
+
+-- OutfitterFrame is parented to the pane but deliberately not anchored to it.
+-- The outfit rows carry secure action buttons, and a protected frame's anchors
+-- may not lead back to a region, which the pane's anchors on Blizzard's side
+-- eventually do.  So copy the pane's position and size onto an anchor against
+-- UIParent instead, and keep it in step from OnUpdate since the pane moves
+-- with the character frame.  The frame has the pane's effective scale, so
+-- everything is measured in the pane's units
+
+-- The pane itself isn't always the size of the space it's shown in: UI skins
+-- such as EllesmereUI scale it down into a column of their own and only widen
+-- some of its contents.  So fill the column the pane sits in when one can be
+-- found, keeping the pane's top so anything the skin puts above it stays clear.
+-- The candidates are EllesmereUI's sidebar column and Blizzard's own sidebar
+-- inset, and a candidate only counts if the pane actually starts inside it
+-- (EllesmereUI parks the inset off-screen, for instance)
+
+Outfitter.cSidebarColumnFrames =
+{
+	"EUI_CharSheet_StatsPanel",
+	"EUI_CharSheet_TitlesPanel",
+	"CharacterFrameInsetRight",
+}
+
+-- Returns a frame's edges in the given effective scale's units
+
+function Outfitter:GetScaledRect(pFrame, pScale)
+	local vLeft, vBottom, vWidth, vHeight = pFrame:GetRect()
+
+	if not vLeft or not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
+		return
+	end
+
+	local vRatio = pFrame:GetEffectiveScale() / pScale
+
+	return vLeft * vRatio, (vLeft + vWidth) * vRatio, (vBottom + vHeight) * vRatio, vBottom * vRatio
+end
+
+function Outfitter:GetSidebarRect(pPane)
+	local vScale = pPane:GetEffectiveScale()
+	local vPaneLeft, vPaneRight, vPaneTop, vPaneBottom = self:GetScaledRect(pPane, vScale)
+
+	if not vPaneLeft then
+		return
+	end
+
+	for _, vFrameName in ipairs(self.cSidebarColumnFrames) do
+		local vColumn = _G[vFrameName]
+
+		if vColumn and vColumn.GetRect then
+			local vLeft, vRight, vTop, vBottom = self:GetScaledRect(vColumn, vScale)
+
+			if vLeft
+			and vPaneLeft >= vLeft - 2 and vPaneLeft < vRight
+			and vPaneTop <= vTop + 2 and vPaneTop > vBottom then
+				return vLeft, vRight, vPaneTop, vBottom
+			end
+		end
+	end
+
+	return vPaneLeft, vPaneRight, vPaneTop, vPaneBottom
+end
+
+-- The floating window has the same problem: it sits beside the character
+-- sheet, and character sheet addons re-anchor the sheet itself to their own
+-- artwork (ChonkyCharacterSheet anchors PaperDollFrame to CharacterFrameBg, a
+-- texture), so anchoring the window to the sheet hands the outfit rows' secure
+-- buttons a chain that ends at a region too.  So it's positioned the same way,
+-- just off the top right of the sheet where it's always been
+
+function Outfitter:GetFloatingFrameRect()
+	local vScale = OutfitterFrame:GetEffectiveScale()
+	local _, vRight, vTop = self:GetScaledRect(OutfitterButtonFrame, vScale)
+
+	if not vRight then
+		return
+	end
+
+	local vLeft = vRight
+	local vTopEdge = vTop - 30
+
+	return vLeft, vLeft + self.cFloatingFrameWidth, vTopEdge, vTopEdge - self.cFloatingFrameHeight
+end
+
+-- Anchors the window to UIParent wherever it should be, whichever mode it's in
+
+function Outfitter:InstallFramePositioning()
+	OutfitterFrame:HookScript("OnUpdate", function ()
+		self:SyncFramePosition()
+	end)
+
+	-- Take the window off the anchor it was given in the XML straight away, so
+	-- nothing is ever laid out against the character sheet
+
+	self.FramePosition = nil
+
+	if not self:SyncFramePosition() and not InCombatLockdown() then
+		OutfitterFrame:ClearAllPoints()
+		OutfitterFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
+end
+
+function Outfitter:SyncFramePosition()
+	if InCombatLockdown() then
+		return
+	end
+
+	local vLeft, vRight, vTop, vBottom
+
+	if self.EmbeddedPane then
+		vLeft, vRight, vTop, vBottom = self:GetSidebarRect(self.EmbeddedPane)
+	else
+		vLeft, vRight, vTop, vBottom = self:GetFloatingFrameRect()
+	end
+
+	if not vLeft then
+		return
+	end
+
+	local vWidth, vHeight = vRight - vLeft, vTop - vBottom
+
+	if vWidth <= 0 or vHeight <= 0 then
+		return
+	end
+
+	local vPosition = self.FramePosition
+
+	if vPosition
+	and vPosition.Left == vLeft
+	and vPosition.Top == vTop
+	and vPosition.Width == vWidth
+	and vPosition.Height == vHeight then
+		return true
+	end
+
+	self.FramePosition = {Left = vLeft, Top = vTop, Width = vWidth, Height = vHeight}
+
+	OutfitterFrame:ClearAllPoints()
+	OutfitterFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", vLeft, vTop)
+	OutfitterFrame:SetSize(vWidth, vHeight)
+
+	return true
+end
+
+-- Blizzard's equipment manager is only faded out, so its rows can still be
+-- clicked and Outfitter has to sit above them.  But only just above: the gear
+-- flyout opened from the character's slots shows over this part of the sheet,
+-- and a level any higher puts Outfitter's list on top of the flyout
+
+function Outfitter:GetHighestFrameLevel(pFrame, pExclude)
+	local vLevel = pFrame:GetFrameLevel()
+
+	for _, vChild in ipairs({pFrame:GetChildren()}) do
+		if vChild ~= pExclude then
+			vLevel = math.max(vLevel, self:GetHighestFrameLevel(vChild, pExclude))
+		end
+	end
+
+	return vLevel
+end
+
+function Outfitter:UpdateEmbeddedFrameLevel()
+	local vPane = self.EmbeddedPane
+
+	if not vPane or InCombatLockdown() then
+		return
+	end
+
+	local vLevel = self:GetHighestFrameLevel(vPane, OutfitterFrame) + 1
+
+	if OutfitterFrame:GetFrameLevel() ~= vLevel then
+		OutfitterFrame:SetFrameLevel(vLevel)
+	end
+end
+
+function Outfitter:RaiseEquipmentFlyout()
+	if not self.EmbeddedPane
+	or not OutfitterFrame:IsVisible()
+	or not EquipmentFlyoutFrame:IsShown()
+	or InCombatLockdown() then
+		return
+	end
+
+	if EquipmentFlyoutFrame:GetFrameStrata() ~= OutfitterFrame:GetFrameStrata() then
+		return
+	end
+
+	local vLevel = self:GetHighestFrameLevel(OutfitterFrame) + 1
+
+	if EquipmentFlyoutFrame:GetFrameLevel() < vLevel then
+		EquipmentFlyoutFrame:SetFrameLevel(vLevel)
+	end
+end
+
+-- Fades Blizzard's equipment manager out from under Outfitter.  Only the alpha
+-- is touched: resizing, hiding or re-anchoring anything in the pane would run
+-- its layout code from here, and its rows must only be built by Blizzard
+
+function Outfitter:SetPaneContentsShown(pPane, pShown)
+	if not pPane then
+		return
+	end
+
+	if not pShown then
+		self.FadedPaneObjects = {}
+
+		local vObjects = {pPane:GetChildren()}
+
+		for _, vRegion in ipairs({pPane:GetRegions()}) do
+			table.insert(vObjects, vRegion)
+		end
+
+		for _, vObject in ipairs(vObjects) do
+			if vObject ~= OutfitterFrame then
+				self.FadedPaneObjects[vObject] = vObject:GetAlpha()
+				vObject:SetAlpha(0)
+			end
+		end
+	elseif self.FadedPaneObjects then
+		for vObject, vAlpha in pairs(self.FadedPaneObjects) do
+			vObject:SetAlpha(vAlpha)
+		end
+
+		self.FadedPaneObjects = nil
+	end
+end
+
+-- The outfit list is a FauxScrollFrame, whose classic scroll bar is too wide
+-- for the sidebar.  There it's hidden and Blizzard's MinimalScrollBar (the one
+-- the equipment manager and titles lists use) stands in, mirroring the faux
+-- scroll frame's offset.  The faux scroll frame still does the scrolling, so
+-- mouse wheel scrolling over the list carries on working as it always has
+
+function Outfitter:GetModernScrollBar()
+	if self.ModernScrollBar ~= nil then
+		return self.ModernScrollBar or nil
+	end
+
+	self.ModernScrollBar = false
+
+	if not BaseScrollBoxEvents
+	or not C_XMLUtil or not C_XMLUtil.GetTemplateInfo
+	or not C_XMLUtil.GetTemplateInfo("MinimalScrollBar") then
+		return
+	end
+
+	local vScrollBar = CreateFrame("EventFrame", "OutfitterMainFrameModernScrollBar", OutfitterMainFrame, "MinimalScrollBar")
+
+	if not vScrollBar.SetVisibleExtentPercentage
+	or not vScrollBar.SetPanExtentPercentage
+	or not vScrollBar.SetScrollPercentage
+	or not vScrollBar.RegisterCallback then
+		vScrollBar:Hide()
+		return
+	end
+
+	vScrollBar:RegisterCallback(BaseScrollBoxEvents.OnScroll, function (_, pPercentage)
+		self:ModernScrollBar_OnScroll(pPercentage)
+	end, self)
+
+	self.ModernScrollBar = vScrollBar
+
+	if self.EllesmereSkin then
+		self.EllesmereSkin.ScrollBar(vScrollBar)
+	end
+
+	return vScrollBar
+end
+
+----------------------------------------
+-- EllesmereUI skin
+----------------------------------------
+
+-- EllesmereUI has a public skinning API for other addons (see SKINNING_API.md
+-- in EllesmereUI).  The callback only runs when EllesmereUI is installed and
+-- the user hasn't turned skinning off for Outfitter, and its primitives only
+-- fade art and paint their own textures, so they're safe on Outfitter's frames.
+-- Frames Outfitter creates later (the slim scroll bar, extra list rows) are
+-- skinned as they're made, through the S kept here.
+--
+-- Only Outfitter in the sidebar is skinned, to sit with EllesmereUI's skinned
+-- character sheet; the floating window keeps its own look.  The skin is
+-- applied the first time Outfitter goes into the sidebar, and since
+-- EllesmereUI's skins can't be taken off again, leaving the sidebar keeps it
+-- until the UI is reloaded
+
+function Outfitter:ApplyEllesmereSkin(S)
+	self.EllesmereSkinFacade = S
+
+	if self.EmbeddedPane then
+		self:SkinWithEllesmere()
+	end
+end
+
+function Outfitter:SkinWithEllesmere()
+	local S = self.EllesmereSkinFacade
+
+	if not S or self.EllesmereSkin then
+		return
+	end
+
+	self.EllesmereSkin = S
+
+	S.Button(OutfitterNewButton)
+	S.WhiteButtonLabel(OutfitterNewButton)
+
+	for vIndex = 0, self.NumListItems - 1 do
+		self:SkinListItem(_G["OutfitterItem"..vIndex])
+	end
+
+	if self.ModernScrollBar then
+		S.ScrollBar(self.ModernScrollBar)
+	end
+
+	-- The slim bar lines up differently under the skin, so lay out again
+	self:UpdateFrameLayout()
+end
+
+function Outfitter:SkinListItem(pItem)
+	local S = self.EllesmereSkin
+
+	if not S or not pItem then
+		return
+	end
+
+	local vCheckbox = _G[pItem:GetName().."OutfitSelected"]
+
+	-- The checkbox frame is 24px on an 18px row, with the box itself drawn 4px
+	-- in from its edges.  Left on the frame, the border would be 24px tall and
+	-- run into the rows above and below, so keep it on the box
+
+	if vCheckbox then
+		S.Checkbox(vCheckbox, {borderInset = 4})
+	end
+end
+
+if EllesmereUI and EllesmereUI.RegisterSkin then
+	EllesmereUI.RegisterSkin("Outfitter", function (S)
+		Outfitter:ApplyEllesmereSkin(S)
+	end)
+end
+
+-- Line the slim bar up with the one in Blizzard's titles pane, which shares
+-- the sidebar, by measuring how far in from the column's right edge that bar
+-- sits.  The titles pane only has a position once it's been laid out, so until
+-- then (or when a skin has done away with it) use a fixed inset
+
+Outfitter.cModernScrollBarInset = 4
+
+function Outfitter:GetTitlesScrollBarInset()
+	local vTitlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
+	local vTitlesScrollBar = vTitlesPane and vTitlesPane.ScrollBar
+
+	if not vTitlesScrollBar or not self.EmbeddedPane then
+		return
+	end
+
+	local vScale = OutfitterFrame:GetEffectiveScale()
+	local _, vBarRight = self:GetScaledRect(vTitlesScrollBar, vScale)
+	local _, vFrameRight = self:GetScaledRect(OutfitterFrame, vScale)
+
+	if not vBarRight or not vFrameRight then
+		return
+	end
+
+	local vInset = vFrameRight - vBarRight
+
+	-- A bar somewhere else entirely (moved off by a skin) isn't one to copy
+
+	if vInset < 0 or vInset > 40 then
+		return
+	end
+
+	-- Whole pixels, so the comparison on each show doesn't keep finding a change
+	return math.floor(vInset + 0.5)
+end
+
+-- Under EllesmereUI the titles list is EllesmereUI's own, with a 3px strip
+-- whose right edge sits 2px in from the column's, and the skinned slim bar
+-- draws its thumb as a strip down its middle.  So centre the slim bar on the
+-- same line, converted from the column's scale to Outfitter's
+
+function Outfitter:GetEllesmereScrollBarInset(pScrollBar)
+	local vTitlesPanel = _G.EUI_CharSheet_TitlesPanel
+
+	if not self.EllesmereSkin or not vTitlesPanel then
+		return
+	end
+
+	local vRatio = vTitlesPanel:GetEffectiveScale() / OutfitterFrame:GetEffectiveScale()
+	local vStripCentre = (2 + 3 / 2) * vRatio
+
+	return math.floor(vStripCentre - pScrollBar:GetWidth() / 2 + 0.5)
+end
+
+function Outfitter:GetModernScrollBarInset(pScrollBar)
+	return self:GetEllesmereScrollBarInset(pScrollBar)
+	    or self:GetTitlesScrollBarInset()
+	    or self.cModernScrollBarInset
+end
+
+function Outfitter:PositionModernScrollBar()
+	local vScrollBar = self.ModernScrollBar
+
+	if not vScrollBar or not self.ModernScrollBarTop then
+		return
+	end
+
+	vScrollBar:ClearAllPoints()
+	vScrollBar:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPRIGHT",
+			-(self.ModernScrollBarInset or self.cModernScrollBarInset), self.ModernScrollBarTop)
+end
+
+function Outfitter:UpdateModernScrollBar(pTotalItems)
+	self.ListTotalItems = pTotalItems
+
+	local vScrollBar = self.EmbeddedPane and self:GetModernScrollBar()
+
+	-- FauxScrollFrame_Update only shows and hides the scroll frame, never the
+	-- classic bar inside it, so it stays hidden once the sidebar has hidden it.
+	-- Put it back whenever the slim bar isn't standing in for it
+
+	local vClassicScrollBar = OutfitterMainFrameScrollFrame.ScrollBar or _G.OutfitterMainFrameScrollFrameScrollBar
+
+	if vClassicScrollBar then
+		vClassicScrollBar:SetShown(not vScrollBar)
+	end
+
+	if not vScrollBar then
+		return
+	end
+
+	local vScrollRange = pTotalItems - self.cMaxDisplayedItems
+
+	if vScrollRange <= 0 then
+		vScrollBar:Hide()
+		return
+	end
+
+	self.UpdatingModernScrollBar = true
+
+	-- Only resize the thumb when the list's length has actually changed
+
+	local vVisibleExtent = self.cMaxDisplayedItems / pTotalItems
+
+	if self.ModernScrollBarRange ~= vScrollRange
+	or self.ModernScrollBarVisibleExtent ~= vVisibleExtent then
+		self.ModernScrollBarRange = vScrollRange
+		self.ModernScrollBarVisibleExtent = vVisibleExtent
+
+		vScrollBar:SetVisibleExtentPercentage(vVisibleExtent)
+		vScrollBar:SetPanExtentPercentage(1 / vScrollRange)
+	end
+
+	-- When the scroll came from the bar itself, leave its thumb where the user
+	-- has it.  Snapping it back to the nearest whole row mid-drag fights the drag
+	-- and sets the list redrawing on every frame
+
+	if not self.ScrollingFromModernBar then
+		vScrollBar:SetScrollPercentage(FauxScrollFrame_GetOffset(OutfitterMainFrameScrollFrame) / vScrollRange,
+				ScrollBoxConstants and ScrollBoxConstants.NoScrollInterpolation)
+	end
+
+	vScrollBar:Show()
+
+	self.UpdatingModernScrollBar = nil
+end
+
+-- The bar reports its position continuously while it's dragged or animating,
+-- often several times a frame, and every row it moves means a full list
+-- update.  So keep only the latest position and apply it once per frame
+
+function Outfitter:ModernScrollBar_OnScroll(pPercentage)
+	if self.UpdatingModernScrollBar or not self.EmbeddedPane then
+		return
+	end
+
+	self.PendingScrollPercentage = pPercentage
+
+	if self.ModernScrollScheduled then
+		return
+	end
+
+	self.ModernScrollScheduled = true
+
+	C_Timer.After(0, function ()
+		self.ModernScrollScheduled = nil
+		self:ApplyModernScroll()
+	end)
+end
+
+function Outfitter:ApplyModernScroll()
+	local vPercentage = self.PendingScrollPercentage
+
+	self.PendingScrollPercentage = nil
+
+	if not vPercentage or not self.EmbeddedPane or not OutfitterFrame:IsVisible() then
+		return
+	end
+
+	local vScrollRange = (self.ListTotalItems or 0) - self.cMaxDisplayedItems
+
+	if vScrollRange <= 0 then
+		return
+	end
+
+	local vOffset = math.floor(vPercentage * vScrollRange + 0.5)
+
+	if vOffset == FauxScrollFrame_GetOffset(OutfitterMainFrameScrollFrame) then
+		return
+	end
+
+	self.ScrollingFromModernBar = true
+
+	FauxScrollFrame_OnVerticalScroll(OutfitterMainFrameScrollFrame,
+			vOffset * self.cListItemHeight, self.cListItemHeight, Outfitter.OnVerticalScroll)
+
+	self.ScrollingFromModernBar = nil
+end
+
+-- The XML only defines the 14 rows the floating window has room for, so add
+-- more when the frame is taller than that, chained on below the last one
+
+Outfitter.NumListItems = 14
+
+function Outfitter:CreateListItems(pNumItems)
+	for vIndex = self.NumListItems, pNumItems - 1 do
+		local vItem = CreateFrame("Button", "OutfitterItem"..vIndex, OutfitterMainFrame, "OutfitterItemTemplate")
+
+		vItem:SetPoint("TOPLEFT", _G["OutfitterItem"..(vIndex - 1)], "BOTTOMLEFT")
+
+		self.NumListItems = vIndex + 1
+
+		self:SkinListItem(vItem)
+	end
+end
+
+function Outfitter:UpdateFrameLayout()
+	if not self.Initialized and not self.EmbeddedPane then
+		return
+	end
+
+	if InCombatLockdown() then
+		self.SidebarLayoutPending = true
+		return
+	end
+
+	-- Make sure the window is off the character sheet's anchors before any row
+	-- anchors its secure button
+	self:SyncFramePosition()
+
+	local vEmbedded = self.EmbeddedPane ~= nil
+	local vWidth, vHeight, vNumRows
+
+	if vEmbedded then
+		vWidth, vHeight = OutfitterFrame:GetSize()
+
+		if not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
+			return
+		end
+
+		vNumRows = math.floor((vHeight - self.cEmbeddedListTop - 27) / self.cListItemHeight)
+		vNumRows = math.max(1, vNumRows)
+	else
+		-- The floating window always has its original size and 14 rows.  Its size
+		-- isn't read back from the frame, which can still be the sidebar's for a
+		-- moment after leaving it
+
+		vWidth, vHeight = self.cFloatingFrameWidth, self.cFloatingFrameHeight
+		vNumRows = 14
+
+		if OutfitterFrame:GetWidth() ~= vWidth or OutfitterFrame:GetHeight() ~= vHeight then
+			OutfitterFrame:SetSize(vWidth, vHeight)
+		end
+	end
+
+	local vListTop = vEmbedded and self.cEmbeddedListTop or self.cFloatingListTop
+	local vModernScrollBar = vEmbedded and self:GetModernScrollBar()
+	local vRowWidth
+
+	-- In the sidebar, use the same slim scroll bar as Blizzard's own sidebar
+	-- lists, which leaves the rows more room than the classic bar and its trench
+
+	if vModernScrollBar then
+		self.ModernScrollBarInset = self:GetModernScrollBarInset(vModernScrollBar)
+		vRowWidth = vWidth - 1 - vModernScrollBar:GetWidth() - self.ModernScrollBarInset - 4
+	else
+		vRowWidth = vWidth - 32
+	end
+
+	self:CreateListItems(vNumRows)
+
+	-- Window decorations only make sense on the floating window
+
+	if OutfitterFrame.Background then
+		for _, vObject in pairs(OutfitterFrame.Background) do
+			vObject:SetShown(not vEmbedded)
+		end
+	end
+
+	OutfitterFrameTitle:SetShown(not vEmbedded)
+	OutfitterCloseButton:SetShown(not vEmbedded)
+	OutfitterMainFrameTitle:SetShown(not vEmbedded)
+	OutfitterOptionsFrameTitle:SetShown(not vEmbedded)
+
+	-- The sidebar has no tabs; it always shows the outfit list, and the options
+	-- are reached with /outfitter options
+
+	for vPanelIndex = 1, #self.cPanelFrames do
+		_G["OutfitterFrameTab"..vPanelIndex]:SetShown(not vEmbedded)
+	end
+
+	-- Outfit list
+
+	for vIndex = 0, self.NumListItems - 1 do
+		local vName = "OutfitterItem"..vIndex
+		local vItem = _G[vName]
+
+		vItem:SetWidth(vRowWidth)
+		_G[vName.."ItemName"]:SetWidth(vRowWidth - 49)
+		_G[vName.."OutfitName"]:SetWidth(vRowWidth - 91)
+		_G[vName.."CategoryName"]:SetWidth(vRowWidth - 24)
+
+		-- The secure button sits beside the row rather than in it, so it has to be
+		-- turned off too or it stays clickable where the row used to be
+
+		if vIndex >= vNumRows then
+			if vItem.disableSecureActions then
+				vItem:disableSecureActions()
+			end
+
+			vItem:Hide()
+		end
+	end
+
+	OutfitterItem0:ClearAllPoints()
+	OutfitterItem0:SetPoint("TOPLEFT", OutfitterMainFrame, "TOPLEFT", 1, -vListTop)
+
+	self.cMaxDisplayedItems = vNumRows
+
+	OutfitterMainFrameHighlight:SetWidth(vRowWidth)
+	OutfitterMainFrameScrollFrame:SetSize(vRowWidth, vNumRows * self.cListItemHeight)
+
+	OutfitterMainFrameScrollbarTrench:ClearAllPoints()
+	OutfitterMainFrameScrollbarTrench:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPLEFT", vWidth - 3, 5 - vListTop)
+	OutfitterMainFrameScrollbarTrench:SetHeight(vNumRows * self.cListItemHeight + 6)
+	OutfitterMainFrameScrollbarTrench:SetShown(not vModernScrollBar)
+
+	if vModernScrollBar then
+		self.ModernScrollBarTop = -vListTop
+		self:PositionModernScrollBar()
+		vModernScrollBar:SetHeight(vNumRows * self.cListItemHeight)
+	elseif self.ModernScrollBar then
+		self.ModernScrollBar:Hide()
+	end
+
+	OutfitterMainFrameButtonBarBackground:SetWidth(vWidth - 3)
+
+	-- In the sidebar the New Outfit button runs the width of the list along the
+	-- bottom, like the buttons under Blizzard's own equipment manager, and the
+	-- floating window's button bar art behind it is left out
+
+	OutfitterMainFrameButtonBarBackground:SetShown(not vEmbedded)
+	OutfitterNewButton:ClearAllPoints()
+
+	if vEmbedded then
+		OutfitterNewButton:SetPoint("BOTTOMLEFT", OutfitterMainFrame, "BOTTOMLEFT", 1, 2)
+		OutfitterNewButton:SetPoint("BOTTOMRIGHT", OutfitterMainFrame, "BOTTOMRIGHT", -4, 2)
+		OutfitterNewButton:SetHeight(22)
+	else
+		OutfitterNewButton:SetSize(115, 21)
+		OutfitterNewButton:SetPoint("BOTTOMRIGHT", OutfitterMainFrame, "BOTTOMRIGHT", -7, 6)
+	end
+
+	local vIconSize = math.min(226, vWidth - 30)
+	OutfitterMainFrameBackground:SetSize(vIconSize, vIconSize)
+
+	-- Options
+
+	OutfitterAutoSwitch:ClearAllPoints()
+	OutfitterAutoSwitch:SetPoint("TOPLEFT", OutfitterOptionsFrame, "TOPLEFT", 15, vEmbedded and -(vListTop + 4) or -90)
+
+	for _, vCheckbox in ipairs({OutfitterAutoSwitch, OutfitterShowOutfitBar, OutfitterShowMinimapButton,
+	                            OutfitterShowHotkeyMessages, OutfitterTooltipInfo, OutfitterItemComparisons,
+	                            OutfitterReplaceEquipmentTab}) do
+		local vText = _G[vCheckbox:GetName().."Text"]
+
+		if vText then
+			vText:SetWidth(vWidth - 55)
+			vText:SetWordWrap(false)
+		end
+	end
+
+	OutfitterOptionsFrameBackground:SetSize(math.min(280, vWidth), math.min(280, vWidth))
+
+	-- About
+
+	local vAbout = OutfitterAboutFrame
+	local vTextWidth = math.min(230, vWidth - 20)
+
+	if vAbout.Title then
+		vAbout.Title:ClearAllPoints()
+		vAbout.Title:SetPoint("TOP", vAbout, "TOP", -4, vEmbedded and -(vListTop + 4) or -36)
+
+		for _, vText in ipairs({vAbout.Title, vAbout.AuthorText, vAbout.CopyrightText, vAbout.ThanksText, vAbout.Credits}) do
+			vText:SetWidth(vTextWidth)
+		end
+	end
+
+	self.DisplayIsDirty = true
+	self:Update(false)
 end
 
 function Outfitter:OnLoad()
@@ -1190,8 +2161,34 @@ function Outfitter:OnLoad()
 end
 
 function Outfitter:OnShow()
+	if self.EmbeddedPane then
+		-- This runs from Blizzard's secure panel code whenever the character
+		-- frame opens with the equipment manager tab selected, so switch
+		-- panels on the next frame instead of from inside that call
+
+		C_Timer.After(0, function ()
+			if OutfitterFrame:IsVisible() and not InCombatLockdown() then
+				-- Blizzard builds the pane's rows as it's shown, so check the level again
+				self:UpdateEmbeddedFrameLevel()
+
+				-- The titles pane may have been laid out since, giving its scroll
+				-- bar a position to line up with
+				if self.ModernScrollBar
+				and self:GetModernScrollBarInset(self.ModernScrollBar) ~= self.ModernScrollBarInset then
+					self:UpdateFrameLayout()
+				end
+				self:ShowPanel(self.PendingPanel or 3)
+			end
+
+			self.PendingPanel = nil
+		end)
+
+		return
+	end
+
 	self.SetFrameLevel(OutfitterFrame, PaperDollFrame:GetFrameLevel() - 1)
 
+	self:SyncFramePosition()
 	self:ShowPanel(3) -- Always switch to the main view when showing the window
 end
 
@@ -1210,10 +2207,15 @@ function Outfitter:OnHide()
 		self.RebuildOutfitDialog:Cancel()
 	end
 
-	OutfitterFrame:Hide()  -- This seems redundant, but the OnHide handler gets called
-	                       -- in response to the parent being hidden (the character window)
-	                       -- so calling Hide() on the frame here ensures that when the
-	                       -- character window is hidden then Outfitter won't be displayed
+	-- In the sidebar the frame stays shown and the equipment manager pane
+	-- controls whether it's visible, so it mustn't be hidden along with it
+
+	if not self.EmbeddedPane then
+		OutfitterFrame:Hide()  -- This seems redundant, but the OnHide handler gets called
+		                       -- in response to the parent being hidden (the character window)
+		                       -- so calling Hide() on the frame here ensures that when the
+		                       -- character window is hidden then Outfitter won't be displayed
+	end
 	                       -- next time it's opened
 end
 
@@ -1426,6 +2428,12 @@ function Outfitter:RegenEnabled(pEvent)
 	self.OutfitStack:UpdateOutfitDisplay()
 
 	self:ResumeSecureActions()
+
+	if self.SidebarLayoutPending then
+		self.SidebarLayoutPending = nil
+		self:UpdateEquipmentManagerTab()
+		self:UpdateFrameLayout()
+	end
 
 	-- Auras were off limits while the combat restriction was active, so the states
 	-- were all cleared.  Re-read them now rather than waiting for an aura to change,
@@ -1693,6 +2701,8 @@ function Outfitter:ExecuteCommand(pCommand)
 
 		errors = {func = self.SetErrorsOption},
 		daxdax = {func = self.SetErrorsOption},
+
+		options = {func = self.OpenOptions},
 	}
 
 	-- Evaluate options if the command uses them
@@ -1787,6 +2797,132 @@ function Outfitter:ShowCommandHelp()
 	self:NoteMessage(HIGHLIGHT_FONT_COLOR_CODE.."/outfitter enable"..NORMAL_FONT_COLOR_CODE..": Allows enabled scripts to run")
 	self:NoteMessage(HIGHLIGHT_FONT_COLOR_CODE.."/outfitter missing"..NORMAL_FONT_COLOR_CODE..": Generates a list of items which are in your outfits but can't be found")
 	self:NoteMessage(HIGHLIGHT_FONT_COLOR_CODE.."/outfitter errors [on|off]"..NORMAL_FONT_COLOR_CODE..": Enables/disables missing item messages during gear changes")
+	self:NoteMessage(HIGHLIGHT_FONT_COLOR_CODE.."/outfitter options"..NORMAL_FONT_COLOR_CODE..": Opens Outfitter's options")
+end
+
+-- In the character sheet's sidebar there are no tabs, so this is the way in
+-- to the options there.  Opening Outfitter again goes back to the outfit list
+
+function Outfitter:OpenOptions()
+	if InCombatLockdown() then
+		return
+	end
+
+	if self.SettingsCategory then
+		Settings.OpenToCategory(self.SettingsCategory:GetID())
+		return
+	end
+
+	if self:IsOpen() then
+		self:ShowPanel(2)
+		return
+	end
+
+	self.PendingPanel = 2
+	self:OpenUI()
+
+	-- The floating window switches panels as it's shown, so it needs telling
+	-- afterwards; the sidebar picks up PendingPanel on its own
+
+	if not self.EmbeddedPane then
+		self.PendingPanel = nil
+		self:ShowPanel(2)
+	end
+end
+
+-- Lists Outfitter's options under AddOns in Blizzard's settings.  Each one
+-- reads and writes the same saved setting through the same function as the
+-- checkbox on Outfitter's own options panel, so the two always agree
+
+function Outfitter:RegisterSettingsCategory()
+	if not Settings or not Settings.RegisterVerticalLayoutCategory or not Settings.RegisterProxySetting then
+		return
+	end
+
+	local vCategory = Settings.RegisterVerticalLayoutCategory(self.cTitle)
+	local vCreateCheckbox = Settings.CreateCheckbox or Settings.CreateCheckBox
+	local vBooleanType = Settings.VarType and Settings.VarType.Boolean or "boolean"
+
+	local vOptions =
+	{
+		{
+			Key = "AutoSwitch",
+			Name = self.cAutoSwitch,
+			Tooltip = self.cAutoSwitchOffDescription,
+			Default = false,
+			Get = function () return self.Settings.Options.DisableAutoSwitch == true end,
+			Set = function (pValue) self:SetAutoSwitch(not pValue) end,
+		},
+		{
+			Key = "ShowOutfitBar",
+			Name = self.cShowOutfitBar,
+			Tooltip = self.cShowOutfitBarDescription,
+			Default = false,
+			Get = function () return self.Settings.OutfitBar.ShowOutfitBar == true end,
+			Set = function (pValue) self.OutfitBar:SetShowOutfitBar(pValue) end,
+		},
+		{
+			Key = "ShowMinimapButton",
+			Name = self.cShowMinimapButton,
+			Tooltip = self.cShowMinimapButtonOffDescription,
+			Default = true,
+			Get = function () return not self.Settings.Options.MinimapButton.hide end,
+			Set = function (pValue) self:SetShowMinimapButton(pValue) end,
+		},
+		{
+			Key = "ShowHotkeyMessages",
+			Name = self.cShowHotkeyMessages,
+			Tooltip = self.cShowHotkeyMessagesOffDescription,
+			Default = true,
+			Get = function () return not self.Settings.Options.DisableHotkeyMessages end,
+			Set = function (pValue) self:SetShowHotkeyMessages(pValue) end,
+		},
+		{
+			Key = "TooltipInfo",
+			Name = self.cTooltipInfo,
+			Tooltip = self.cTooltipInfoOffDescription,
+			Default = true,
+			Get = function () return not self.Settings.Options.DisableToolTipInfo end,
+			Set = function (pValue) self:SetShowTooltipInfo(pValue) end,
+		},
+		{
+			Key = "ItemComparisons",
+			Name = self.cItemComparisons,
+			Tooltip = self.cItemComparisonsOffDescription,
+			Default = true,
+			Get = function () return not self.Settings.Options.DisableItemComparisons end,
+			Set = function (pValue) self:SetShowItemComparisons(pValue) end,
+		},
+	}
+
+	if self.IsRetail then
+		table.insert(vOptions,
+		{
+			Key = "ReplaceEquipmentTab",
+			Name = self.cReplaceEquipmentTab,
+			Tooltip = self.cReplaceEquipmentTabOffDescription,
+			Default = false,
+			Get = function () return self:IsReplacingEquipmentTab() end,
+			Set = function (pValue) self:SetReplaceEquipmentTab(pValue) end,
+		})
+	end
+
+	for _, vOption in ipairs(vOptions) do
+		local vSetting = Settings.RegisterProxySetting(vCategory, "OUTFITTER_"..vOption.Key:upper(),
+				vBooleanType, vOption.Name, vOption.Default, vOption.Get,
+				function (pValue)
+					vOption.Set(pValue)
+
+					-- Keep Outfitter's own options panel in step if it's showing
+					self:Update(false)
+				end)
+
+		vCreateCheckbox(vCategory, vSetting, vOption.Tooltip)
+	end
+
+	Settings.RegisterAddOnCategory(vCategory)
+
+	self.SettingsCategory = vCategory
 end
 
 function Outfitter:UnequipItemByName(pItemName)
@@ -1920,7 +3056,7 @@ function Outfitter:DeleteSelectedOutfit()
 end
 
 function Outfitter:TalentsChanged()
-	self.CanDualWield2H = self.PlayerClass == "WARRIOR" and GetSpecialization() == 2
+	self.CanDualWield2H = self.PlayerClass == "WARRIOR" and OutfitterAPI:GetSpecialization() == 2
 end
 
 function Outfitter:SetScript(pOutfit, pScript)
@@ -2355,6 +3491,29 @@ end
 function Outfitter:SetShowTooltipInfo(pShowInfo)
 	self.Settings.Options.DisableToolTipInfo = not pShowInfo
 	self:Update(false)
+end
+
+-- Outfitter always takes over the equipment manager in the sidebar on classic
+-- clients.  On retail it's optional and off unless asked for, leaving the
+-- floating window beside the character sheet as it's always been
+
+Outfitter.IsRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and select(4, GetBuildInfo()) >= 100000
+
+function Outfitter:IsReplacingEquipmentTab()
+	if not self.IsRetail then
+		return true
+	end
+
+	return self.Settings.Options.ReplaceEquipmentTab == true
+end
+
+function Outfitter:SetReplaceEquipmentTab(pReplace)
+	if not self.IsRetail then
+		return
+	end
+
+	self.Settings.Options.ReplaceEquipmentTab = pReplace and true or nil
+	self:UpdateEquipmentManagerTab()
 end
 
 function Outfitter:SetShowItemComparisons(pShowComparisons)
@@ -2830,6 +3989,13 @@ function Outfitter:Update(pOutfitsChanged)
 		wipe(self.OutfitInfoCache)
 	end
 
+	-- Anything but a scroll may mean the outfits or bags changed, so the list
+	-- has to be built again (even if it isn't shown right now)
+
+	if not self.ScrollOnlyUpdate then
+		self.ListData = nil
+	end
+
 	-- Just leave if we're not visible (when does this happen?)
 
 	if not OutfitterFrame:IsVisible() then
@@ -2847,22 +4013,59 @@ function Outfitter:Update(pOutfitsChanged)
 
 		self.DisplayIsDirty = false
 
-		-- Sort the outfits
+		-- Building the list's contents means scanning every bag slot and every
+		-- outfit item, which is far too slow to repeat for each row scrolled.
+		-- Scrolling doesn't change any of it, so a scroll reuses what the last
+		-- full update built and only redraws the rows
 
-		self:SortOutfits()
+		local vInventoryCache, vWarboundItems, vBoEItems
+		local vListData = self.ScrollOnlyUpdate and self.ListData
 
-		-- Get the equippable items so outfits can be marked if they're missing anything
+		if vListData then
+			vInventoryCache = vListData.InventoryCache
+			vWarboundItems = vListData.WarboundItems
+			vBoEItems = vListData.BoEItems
+		else
+			-- Sort the outfits
 
-		local vInventoryCache = self:GetInventoryCache()
+			self:SortOutfits()
 
-		-- Update the slot enables if they're shown
+			-- Get the equippable items so outfits can be marked if they're missing anything
 
-		if pOutfitsChanged
-		and OutfitterSlotEnables:IsVisible() then
-			self:UpdateSlotEnables(self.SelectedOutfit, vInventoryCache)
+			vInventoryCache = self:GetInventoryCache()
+
+			-- Update the slot enables if they're shown
+
+			if pOutfitsChanged
+			and OutfitterSlotEnables:IsVisible() then
+				self:UpdateSlotEnables(self.SelectedOutfit, vInventoryCache)
+			end
+
+			vInventoryCache:CompiledUnusedItemsList()
+
+			if vInventoryCache.UnusedItems then
+				table.sort(vInventoryCache.UnusedItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			vWarboundItems = vInventoryCache:GetWarboundItems()
+
+			if vWarboundItems then
+				table.sort(vWarboundItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			vBoEItems = vInventoryCache:GetBoEItems()
+
+			if vBoEItems then
+				table.sort(vBoEItems, Outfitter.CompareItemLevelsAndNames)
+			end
+
+			self.ListData =
+			{
+				InventoryCache = vInventoryCache,
+				WarboundItems = vWarboundItems,
+				BoEItems = vBoEItems,
+			}
 		end
-
-		vInventoryCache:CompiledUnusedItemsList()
 
 		-- Update the list
 
@@ -2883,23 +4086,18 @@ function Outfitter:Update(pOutfitsChanged)
 
 		if vItemIndex < self.cMaxDisplayedItems
 		and vInventoryCache.UnusedItems then
-			table.sort(vInventoryCache.UnusedItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vInventoryCache.UnusedItems, "OddsNEnds", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the Warbound until equipped items
-		local vWarboundItems = vInventoryCache:GetWarboundItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vWarboundItems and #vWarboundItems > 0 then
-			table.sort(vWarboundItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vWarboundItems, "Warbound", vItemIndex, vFirstItemIndex)
 		end
 
 		-- Add the BoEs
-		local vBoEItems = vInventoryCache:GetBoEItems()
 		if vItemIndex < self.cMaxDisplayedItems
 		and vBoEItems and #vBoEItems > 0 then
-			table.sort(vBoEItems, Outfitter.CompareItemLevelsAndNames)
 			vItemIndex, vFirstItemIndex = self:AddOutfitItemsToList(vBoEItems, "BoEs", vItemIndex, vFirstItemIndex)
 		end
 
@@ -2963,6 +4161,8 @@ function Outfitter:Update(pOutfitsChanged)
 				nil, nil, nil,                  -- button, smallWidth, bigWidth
 				nil,                            -- highlightFrame
 				0, 0)                           -- smallHighlightWidth, bigHighlightWidth
+
+		self:UpdateModernScrollBar(vTotalNumItems)
 	elseif self.CurrentPanel == 2 then -- Options panel
 		OutfitterAutoSwitch:SetChecked(self.Settings.Options.DisableAutoSwitch)
 		OutfitterShowMinimapButton:SetChecked(not self.Settings.Options.MinimapButton.hide)
@@ -2970,12 +4170,17 @@ function Outfitter:Update(pOutfitsChanged)
 		OutfitterShowHotkeyMessages:SetChecked(not self.Settings.Options.DisableHotkeyMessages)
 		OutfitterShowOutfitBar:SetChecked(self.Settings.OutfitBar.ShowOutfitBar)
 		OutfitterItemComparisons:SetChecked(not self.Settings.Options.DisableItemComparisons)
+		OutfitterReplaceEquipmentTab:SetChecked(self:IsReplacingEquipmentTab())
 	end
 end
 
 function Outfitter.OnVerticalScroll(pScrollFrame)
 	Outfitter.DisplayIsDirty = true
+
+	-- Only the visible rows change, so let Update reuse the list it last built
+	Outfitter.ScrollOnlyUpdate = true
 	Outfitter:Update(false)
+	Outfitter.ScrollOnlyUpdate = nil
 end
 
 function Outfitter:SelectOutfit(pOutfit)
@@ -3352,7 +4557,7 @@ function Outfitter:AskReset(param)
 end
 
 function Outfitter:Reset()
-	OutfitterFrame:Hide()
+	self:HideOutfitterFrame()
 
 	self:ClearSelection()
 	self.OutfitStack:Clear()
@@ -4942,8 +6147,32 @@ function Outfitter:Initialize()
 		end
 	end
 
-	-- Move the Blizzard UI over a bit
-	PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrameInsetRight, "TOPRIGHT", -30, -1)
+	-- Move the Blizzard UI over a bit.  Only nudge the tabs when they're already
+	-- anchored to the inset, as on retail; the classic character frame lays them
+	-- out differently, and anchoring them across to the inset there ties the
+	-- frame's anchors together so the panel manager can no longer position it
+	if PaperDollSidebarTabs and CharacterFrameInsetRight then
+		for vIndex = 1, PaperDollSidebarTabs:GetNumPoints() do
+			local vPoint, vRelativeTo = PaperDollSidebarTabs:GetPoint(vIndex)
+
+			if vPoint == "BOTTOMRIGHT" and vRelativeTo == CharacterFrameInsetRight then
+				PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrameInsetRight, "TOPRIGHT", -30, -1)
+				break
+			end
+		end
+	end
+
+	-- Position the window against UIParent rather than the character sheet
+	self:InstallFramePositioning()
+
+	-- Take over Blizzard's equipment manager tab
+	self:InstallEquipmentManagerTab()
+
+	-- The sidebar is only optional on retail
+	OutfitterReplaceEquipmentTab:SetShown(self.IsRetail)
+
+	-- List the options in Blizzard's AddOns settings
+	self:RegisterSettingsCategory()
 
 	-- Initialize player state
 
@@ -5358,7 +6587,7 @@ end
 function Outfitter:InstallDefaultSpecializationIcons()
 	local numSpecs = GetNumSpecializations()
 	for specIndex = 1, numSpecs do
-		local _, specName, _, specIconID = GetSpecializationInfo(specIndex)
+		local _, specName, _, specIconID = OutfitterAPI:GetSpecializationInfo(specIndex)
 		local scriptID = "SPECIALIZATION_"..specIndex
 		Outfitter.OutfitBar.cDefaultScriptIcons[scriptID] = specIconID
 	end
@@ -5369,7 +6598,7 @@ function Outfitter:InitializeTalentTreeOutfits()
 
 	local numSpecs = GetNumSpecializations()
 	for specIndex = 1, numSpecs do
-		local _, specName, _, specIconID = GetSpecializationInfo(specIndex)
+		local _, specName, _, specIconID = OutfitterAPI:GetSpecializationInfo(specIndex)
 
 		-- Done when the names run out
 		if not specName then
@@ -6289,21 +7518,25 @@ end
 
 function Outfitter:ToggleUI(pToggleCharWindow)
 	if self:IsOpen() then
-		OutfitterFrame:Hide()
-
 		if pToggleCharWindow then
 			HideUIPanel(CharacterFrame)
+		else
+			self:HideOutfitterFrame()
 		end
 	else
 		self:OpenUI()
 	end
 end
 
-function Outfitter:OpenUI()
+function Outfitter:OpenCharacterFrame()
 	CharacterFrame:ShowSubFrame("PaperDollFrame")
 	ShowUIPanel(CharacterFrame)
 	CharacterFrame:RefreshDisplay()
-	OutfitterFrame:Show()
+end
+
+function Outfitter:OpenUI()
+	self:OpenCharacterFrame()
+	self:ShowOutfitterFrame()
 end
 
 function Outfitter:WearingOutfitName(pOutfitName)
@@ -7376,18 +8609,12 @@ function Outfitter:ShowMissingItems()
 	end
 end
 
+-- The old companion API (GetNumCompanions/CallCompanion) is gone, so this
+-- goes through the pet journal like SummonCompanionByName
 function Outfitter:CallCompanionByName(pName)
-	local vNumCompanions = GetNumCompanions("CRITTER")
-	local vLowerName = pName:lower()
-
-	for vIndex = 1, vNumCompanions do
-		if GetCompanionInfo("CRITTER", vIndex):lower() == vLowerName then
-			CallCompanion("CRITTER", vIndex)
-			return
-		end
+	if not self:SummonCompanionByName(pName) then
+		self:ErrorMessage("CallCompanionByName: couldn't find a pet named %s", tostring(pName))
 	end
-
-	self:ErrorMessage("CallCompanionByName: couldn't find a pet named %s", tostring(pName))
 end
 
 function Outfitter:PlayerIsOnQuestID(pQuestID)
@@ -7464,9 +8691,13 @@ end
 ----------------------------------------
 
 function Outfitter._ExtendedCompareTooltip:Construct()
+	self.Tooltips = {}
+	self.NumTooltipsShown = 0
+	self.MaxTooltipsShown = 5
+
 	hooksecurefunc("GameTooltip_ShowCompareItem", function (pShift)
         if not Outfitter.Settings.Options.DisableItemComparisons then
-            if OutfitterAPI.IsWoW1002 then
+            if TooltipUtil and TooltipUtil.ShouldDoItemComparison then
                 if TooltipUtil.ShouldDoItemComparison(self) then
                     if not IsModifiedClick("COMPAREITEMS") then
                       self:HideCompareItems()
@@ -7480,32 +8711,26 @@ function Outfitter._ExtendedCompareTooltip:Construct()
         end
     end)
 
-    if OutfitterAPI.IsWoW1002 then
-        GameTooltip:HookScript("OnHide", function ()
-            self:HideCompareItems()
-        end)
+	GameTooltip:HookScript("OnHide", function ()
+		self:HideCompareItems()
+	end)
 
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function ()
-            if not IsModifiedClick("COMPAREITEMS") then
-                self:HideCompareItems()
-            end
-        end)
-	else
-		GameTooltip:HookScript("OnHide", function ()
-			self:HideCompareItems()
+	-- Newer clients, including the classic ones built on the modern UI, dropped
+	-- OnTooltipSetItem in favour of the tooltip data API, so check for that API
+	-- rather than going by the build number
+	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
+		TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function ()
+			if not IsModifiedClick("COMPAREITEMS") then
+				self:HideCompareItems()
+			end
 		end)
-
+	elseif GameTooltip:HasScript("OnTooltipSetItem") then
 		GameTooltip:HookScript("OnTooltipSetItem", function ()
 			if not IsModifiedClick("COMPAREITEMS") then
 				self:HideCompareItems()
 			end
 		end)
-
 	end
-
-	self.Tooltips = {}
-	self.NumTooltipsShown = 0
-	self.MaxTooltipsShown = 5
 end
 
 function Outfitter._ExtendedCompareTooltip:ShowCompareItem()
@@ -7746,7 +8971,7 @@ function Outfitter._ExtendedCompareTooltip:AddShoppingLink(pTitle, pItemName, pL
 
 	if not vTooltip then
 		vTooltip = CreateFrame("GameTooltip", "OutfitterCompareTooltip"..self.NumTooltipsShown, UIParent, "ShoppingTooltipTemplate")
-		if OutfitterAPI.IsWoW1002 then
+		if GameTooltipDataMixin and TooltipUtil and TooltipUtil.ShouldDoItemComparison then
 		  Mixin(vTooltip, GameTooltipDataMixin)
 		  vTooltip:SetScript("OnUpdate", function ()
 			  if not TooltipUtil.ShouldDoItemComparison(vTooltip) then
@@ -8075,7 +9300,7 @@ function Outfitter:SynchronizeCompanionState()
 end
 
 function Outfitter:GetTalentTreeName(pIndex)
-	local _, vName = GetSpecializationInfo(pIndex)
+	local _, vName = OutfitterAPI:GetSpecializationInfo(pIndex)
 	return vName
 end
 
@@ -8463,7 +9688,8 @@ function Outfitter._ListItem:OnEnter()
 			end
 
 			GameTooltip:SetInventoryItem("player", self.outfitItem.Location.SlotID)
-		elseif self.outfitItem.Location.BagIndex == -1 then
+		elseif self.outfitItem.Location.BagIndex == -1 and BankButtonIDToInvSlotID then
+			-- Old-style bank slots; the tabbed bank shows up through SetBagItem below
 			GameTooltip:SetInventoryItem("player", BankButtonIDToInvSlotID(self.outfitItem.Location.BagSlotIndex))
 		else
 			vHasCooldown, vRepairCost = GameTooltip:SetBagItem(self.outfitItem.Location.BagIndex, self.outfitItem.Location.BagSlotIndex)

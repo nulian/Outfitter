@@ -403,14 +403,15 @@ function Outfitter.OutfitBar:GetOutfitTexture(pOutfit)
 end
 
 function Outfitter.OutfitBar:GetCursorTexture()
-	local vType, vParam1, vParam2 = GetCursorInfo()
+	local vType, vParam1, vParam2, vParam3 = GetCursorInfo()
 
 	if not vType then
 		return
 	end
 
-	if vType == "spell" and vParam1 and vParam2 then
-		return GetSpellTexture(vParam1, vParam2)
+	-- For spells the fourth value is the spell ID
+	if vType == "spell" and vParam3 then
+		return C_Spell.GetSpellTexture(vParam3)
 
 	elseif vType == "item" then
 		for _, vInventorySlot in ipairs(Outfitter.cSlotNames) do
@@ -1245,12 +1246,10 @@ function Outfitter.OutfitBar.TextureSets.Spellbook:Activate()
 	end
 
 	-- Insert the spellbook category icons together
-	for tabIndex = 1, MAX_SKILLLINE_TABS do
-		local	categoryName, categoryIconID, categoryOffset, categoryNumSpells = GetSpellTabInfo(tabIndex)
-
-		if not categoryName then
-			break
-		end
+	local numSkillLines = C_SpellBook.GetNumSpellBookSkillLines()
+	for skillLineIndex = 1, numSkillLines do
+		local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(skillLineIndex)
+		local categoryIconID = skillLineInfo and skillLineInfo.iconID
 
 		if categoryIconID and not usedIconIDs[categoryIconID] then
 			table.insert(self.TextureList, categoryIconID)
@@ -1259,15 +1258,13 @@ function Outfitter.OutfitBar.TextureSets.Spellbook:Activate()
 	end
 
 	-- Now insert the icons from each category
-	for tabIndex = 1, MAX_SKILLLINE_TABS do
-		local	categoryName, categoryIconID, categoryOffset, categoryNumSpells = GetSpellTabInfo(tabIndex)
-
-		if not categoryName then
-			break
-		end
+	for skillLineIndex = 1, numSkillLines do
+		local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(skillLineIndex)
+		local categoryOffset = skillLineInfo and skillLineInfo.itemIndexOffset or 0
+		local categoryNumSpells = skillLineInfo and skillLineInfo.numSpellBookItems or 0
 
 		for spellIndex = categoryOffset + 1, categoryOffset + categoryNumSpells do
-			local spellIconID = GetSpellTexture(spellIndex, BOOKTYPE_SPELL)
+			local spellIconID = C_SpellBook.GetSpellBookItemTexture(spellIndex, Enum.SpellBookSpellBank.Player)
 
 			if spellIconID and not usedIconIDs[spellIconID] then
 				table.insert(self.TextureList, spellIconID)

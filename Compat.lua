@@ -49,6 +49,18 @@ function API:ShowContainerSellCursor(...)
   return ShowContainerSellCursor(...)
 end
 
+-- The global spec functions only exist where Blizzard_DeprecatedSpecialization
+-- loads, which doesn't include WoW Forever
+function API:GetSpecialization(...)
+    if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then return C_SpecializationInfo.GetSpecialization(...) end
+    return GetSpecialization(...)
+end
+
+function API:GetSpecializationInfo(...)
+    if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then return C_SpecializationInfo.GetSpecializationInfo(...) end
+    return GetSpecializationInfo(...)
+end
+
 function API:GetNumTrackingTypes(...)
     if C_Minimap and C_Minimap.GetNumTrackingTypes then return C_Minimap.GetNumTrackingTypes(...) end
     return GetNumTrackingTypes(...)
