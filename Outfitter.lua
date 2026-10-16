@@ -1662,20 +1662,70 @@ function Outfitter:GetModernScrollBar()
 	return vScrollBar
 end
 
+-- Line the slim bar up with the one in Blizzard's titles pane, which shares
+-- the sidebar, by measuring how far in from the column's right edge that bar
+-- sits.  The titles pane only has a position once it's been laid out, so until
+-- then (or when a skin has done away with it) use a fixed inset
+
+Outfitter.cModernScrollBarInset = 4
+
+function Outfitter:GetTitlesScrollBarInset()
+	local vTitlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
+	local vTitlesScrollBar = vTitlesPane and vTitlesPane.ScrollBar
+
+	if not vTitlesScrollBar or not self.EmbeddedPane then
+		return
+	end
+
+	local vScale = OutfitterFrame:GetEffectiveScale()
+	local _, vBarRight = self:GetScaledRect(vTitlesScrollBar, vScale)
+	local _, vFrameRight = self:GetScaledRect(OutfitterFrame, vScale)
+
+	if not vBarRight or not vFrameRight then
+		return
+	end
+
+	local vInset = vFrameRight - vBarRight
+
+	-- A bar somewhere else entirely (moved off by a skin) isn't one to copy
+
+	if vInset < 0 or vInset > 40 then
+		return
+	end
+
+	-- Whole pixels, so the comparison on each show doesn't keep finding a change
+	return math.floor(vInset + 0.5)
+end
+
+function Outfitter:PositionModernScrollBar()
+	local vScrollBar = self.ModernScrollBar
+
+	if not vScrollBar or not self.ModernScrollBarTop then
+		return
+	end
+
+	vScrollBar:ClearAllPoints()
+	vScrollBar:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPRIGHT",
+			-(self.ModernScrollBarInset or self.cModernScrollBarInset), self.ModernScrollBarTop)
+end
+
 function Outfitter:UpdateModernScrollBar(pTotalItems)
 	self.ListTotalItems = pTotalItems
 
 	local vScrollBar = self.EmbeddedPane and self:GetModernScrollBar()
 
-	if not vScrollBar then
-		return
-	end
+	-- FauxScrollFrame_Update only shows and hides the scroll frame, never the
+	-- classic bar inside it, so it stays hidden once the sidebar has hidden it.
+	-- Put it back whenever the slim bar isn't standing in for it
 
-	-- FauxScrollFrame_Update shows the classic bar again on every update
 	local vClassicScrollBar = OutfitterMainFrameScrollFrame.ScrollBar or _G.OutfitterMainFrameScrollFrameScrollBar
 
 	if vClassicScrollBar then
-		vClassicScrollBar:Hide()
+		vClassicScrollBar:SetShown(not vScrollBar)
+	end
+
+	if not vScrollBar then
+		return
 	end
 
 	local vScrollRange = pTotalItems - self.cMaxDisplayedItems
@@ -1824,7 +1874,8 @@ function Outfitter:UpdateFrameLayout()
 	-- lists, which leaves the rows more room than the classic bar and its trench
 
 	if vModernScrollBar then
-		vRowWidth = vWidth - 1 - vModernScrollBar:GetWidth() - 8
+		self.ModernScrollBarInset = self:GetTitlesScrollBarInset() or self.cModernScrollBarInset
+		vRowWidth = vWidth - 1 - vModernScrollBar:GetWidth() - self.ModernScrollBarInset - 4
 	else
 		vRowWidth = vWidth - 32
 	end
@@ -1888,14 +1939,30 @@ function Outfitter:UpdateFrameLayout()
 	OutfitterMainFrameScrollbarTrench:SetShown(not vModernScrollBar)
 
 	if vModernScrollBar then
-		vModernScrollBar:ClearAllPoints()
-		vModernScrollBar:SetPoint("TOPRIGHT", OutfitterMainFrame, "TOPRIGHT", -4, -vListTop)
+		self.ModernScrollBarTop = -vListTop
+		self:PositionModernScrollBar()
 		vModernScrollBar:SetHeight(vNumRows * self.cListItemHeight)
 	elseif self.ModernScrollBar then
 		self.ModernScrollBar:Hide()
 	end
 
 	OutfitterMainFrameButtonBarBackground:SetWidth(vWidth - 3)
+
+	-- In the sidebar the New Outfit button runs the width of the list along the
+	-- bottom, like the buttons under Blizzard's own equipment manager, and the
+	-- floating window's button bar art behind it is left out
+
+	OutfitterMainFrameButtonBarBackground:SetShown(not vEmbedded)
+	OutfitterNewButton:ClearAllPoints()
+
+	if vEmbedded then
+		OutfitterNewButton:SetPoint("BOTTOMLEFT", OutfitterMainFrame, "BOTTOMLEFT", 1, 2)
+		OutfitterNewButton:SetPoint("BOTTOMRIGHT", OutfitterMainFrame, "BOTTOMRIGHT", -4, 2)
+		OutfitterNewButton:SetHeight(22)
+	else
+		OutfitterNewButton:SetSize(115, 21)
+		OutfitterNewButton:SetPoint("BOTTOMRIGHT", OutfitterMainFrame, "BOTTOMRIGHT", -7, 6)
+	end
 
 	local vIconSize = math.min(226, vWidth - 30)
 	OutfitterMainFrameBackground:SetSize(vIconSize, vIconSize)
@@ -1952,6 +2019,13 @@ function Outfitter:OnShow()
 			if OutfitterFrame:IsVisible() and not InCombatLockdown() then
 				-- Blizzard builds the pane's rows as it's shown, so check the level again
 				self:UpdateEmbeddedFrameLevel()
+
+				-- The titles pane may have been laid out since, giving its scroll
+				-- bar a position to line up with
+				if self.ModernScrollBar
+				and (self:GetTitlesScrollBarInset() or self.cModernScrollBarInset) ~= self.ModernScrollBarInset then
+					self:UpdateFrameLayout()
+				end
 				self:ShowPanel(self.PendingPanel or 3)
 			end
 
