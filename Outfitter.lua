@@ -1291,7 +1291,7 @@ function Outfitter:InstallEquipmentManagerTab()
 	end)
 
 	vTab:HookScript("OnEnter", function ()
-		if self.Settings.Options.DisableEquipmentTab then
+		if not self:IsReplacingEquipmentTab() then
 			return
 		end
 
@@ -1310,7 +1310,7 @@ function Outfitter:UpdateEquipmentManagerTab()
 
 	self:UpdateEquipmentTabIcon()
 
-	self:SetEmbeddedInSidebar(not self.Settings.Options.DisableEquipmentTab)
+	self:SetEmbeddedInSidebar(self:IsReplacingEquipmentTab())
 end
 
 function Outfitter:UpdateEquipmentTabIcon()
@@ -1344,7 +1344,7 @@ function Outfitter:UpdateEquipmentTabIcon()
 	-- tab alone and let the label stand
 
 	local vTabArtHidden = vTab.TabBg ~= nil and vTab.TabBg:GetAlpha() == 0
-	local vShowIcon = not self.Settings.Options.DisableEquipmentTab and not vTabArtHidden
+	local vShowIcon = self:IsReplacingEquipmentTab() and not vTabArtHidden
 
 	if vTabArtHidden then
 		-- The skin has faded Blizzard's icon itself, so it mustn't be restored
@@ -1650,17 +1650,32 @@ function Outfitter:UpdateFrameLayout()
 	end
 
 	local vEmbedded = self.EmbeddedPane ~= nil
-	local vWidth, vHeight = OutfitterFrame:GetSize()
+	local vWidth, vHeight, vNumRows
 
-	if not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
-		return
+	if vEmbedded then
+		vWidth, vHeight = OutfitterFrame:GetSize()
+
+		if not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
+			return
+		end
+
+		vNumRows = math.floor((vHeight - self.cEmbeddedListTop - 27) / self.cListItemHeight)
+		vNumRows = math.max(1, vNumRows)
+	else
+		-- The floating window always has its original size and 14 rows.  Its size
+		-- isn't read back from the frame, which can still be the sidebar's for a
+		-- moment after leaving it
+
+		vWidth, vHeight = self.cFloatingFrameWidth, self.cFloatingFrameHeight
+		vNumRows = 14
+
+		if OutfitterFrame:GetWidth() ~= vWidth or OutfitterFrame:GetHeight() ~= vHeight then
+			OutfitterFrame:SetSize(vWidth, vHeight)
+		end
 	end
 
 	local vListTop = vEmbedded and self.cEmbeddedListTop or self.cFloatingListTop
 	local vRowWidth = vWidth - 32
-	local vNumRows = math.floor((vHeight - vListTop - 27) / self.cListItemHeight)
-
-	vNumRows = math.max(1, vNumRows)
 
 	self:CreateListItems(vNumRows)
 
@@ -1695,7 +1710,14 @@ function Outfitter:UpdateFrameLayout()
 		_G[vName.."OutfitName"]:SetWidth(vRowWidth - 91)
 		_G[vName.."CategoryName"]:SetWidth(vRowWidth - 24)
 
+		-- The secure button sits beside the row rather than in it, so it has to be
+		-- turned off too or it stays clickable where the row used to be
+
 		if vIndex >= vNumRows then
+			if vItem.disableSecureActions then
+				vItem:disableSecureActions()
+			end
+
 			vItem:Hide()
 		end
 	end
@@ -2484,15 +2506,19 @@ function Outfitter:RegisterSettingsCategory()
 			Get = function () return not self.Settings.Options.DisableItemComparisons end,
 			Set = function (pValue) self:SetShowItemComparisons(pValue) end,
 		},
+	}
+
+	if self.IsRetail then
+		table.insert(vOptions,
 		{
 			Key = "ReplaceEquipmentTab",
 			Name = self.cReplaceEquipmentTab,
 			Tooltip = self.cReplaceEquipmentTabOffDescription,
-			Default = true,
-			Get = function () return not self.Settings.Options.DisableEquipmentTab end,
+			Default = false,
+			Get = function () return self:IsReplacingEquipmentTab() end,
 			Set = function (pValue) self:SetReplaceEquipmentTab(pValue) end,
-		},
-	}
+		})
+	end
 
 	for _, vOption in ipairs(vOptions) do
 		local vSetting = Settings.RegisterProxySetting(vCategory, "OUTFITTER_"..vOption.Key:upper(),
@@ -3080,8 +3106,26 @@ function Outfitter:SetShowTooltipInfo(pShowInfo)
 	self:Update(false)
 end
 
+-- Outfitter always takes over the equipment manager in the sidebar on classic
+-- clients.  On retail it's optional and off unless asked for, leaving the
+-- floating window beside the character sheet as it's always been
+
+Outfitter.IsRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and select(4, GetBuildInfo()) >= 100000
+
+function Outfitter:IsReplacingEquipmentTab()
+	if not self.IsRetail then
+		return true
+	end
+
+	return self.Settings.Options.ReplaceEquipmentTab == true
+end
+
 function Outfitter:SetReplaceEquipmentTab(pReplace)
-	self.Settings.Options.DisableEquipmentTab = not pReplace
+	if not self.IsRetail then
+		return
+	end
+
+	self.Settings.Options.ReplaceEquipmentTab = pReplace and true or nil
 	self:UpdateEquipmentManagerTab()
 end
 
@@ -3698,7 +3742,7 @@ function Outfitter:Update(pOutfitsChanged)
 		OutfitterShowHotkeyMessages:SetChecked(not self.Settings.Options.DisableHotkeyMessages)
 		OutfitterShowOutfitBar:SetChecked(self.Settings.OutfitBar.ShowOutfitBar)
 		OutfitterItemComparisons:SetChecked(not self.Settings.Options.DisableItemComparisons)
-		OutfitterReplaceEquipmentTab:SetChecked(not self.Settings.Options.DisableEquipmentTab)
+		OutfitterReplaceEquipmentTab:SetChecked(self:IsReplacingEquipmentTab())
 	end
 end
 
@@ -5688,6 +5732,9 @@ function Outfitter:Initialize()
 
 	-- Take over Blizzard's equipment manager tab
 	self:InstallEquipmentManagerTab()
+
+	-- The sidebar is only optional on retail
+	OutfitterReplaceEquipmentTab:SetShown(self.IsRetail)
 
 	-- List the options in Blizzard's AddOns settings
 	self:RegisterSettingsCategory()
