@@ -1262,6 +1262,28 @@ function Outfitter:InstallEquipmentManagerTab()
 		self:UpdateFrameLayout()
 	end)
 
+	-- The gear flyout opens over the sidebar, and Outfitter can't drop any lower
+	-- without uncovering the equipment manager's rows, which are still
+	-- clickable.  Its own controls nest a few levels above it as well, so lift
+	-- the flyout over the whole of Outfitter instead.  Only its level is
+	-- changed; none of Blizzard's flyout code is called from here
+
+	if EquipmentFlyout_Show and EquipmentFlyoutFrame then
+		hooksecurefunc("EquipmentFlyout_Show", function ()
+			self:RaiseEquipmentFlyout()
+		end)
+	end
+
+	-- Skins may restyle the tab after Outfitter has loaded, so check it again
+	-- whenever the character sheet is opened
+
+	PaperDollFrame:HookScript("OnShow", function ()
+		self:UpdateEquipmentTabIcon()
+
+		-- and again once any skin's own OnShow handling has run
+		C_Timer.After(0, function () self:UpdateEquipmentTabIcon() end)
+	end)
+
 	OutfitterFrame:HookScript("OnUpdate", function ()
 		if self.EmbeddedPane then
 			self:SyncEmbeddedPosition()
@@ -1286,6 +1308,18 @@ function Outfitter:UpdateEquipmentManagerTab()
 		return
 	end
 
+	self:UpdateEquipmentTabIcon()
+
+	self:SetEmbeddedInSidebar(not self.Settings.Options.DisableEquipmentTab)
+end
+
+function Outfitter:UpdateEquipmentTabIcon()
+	local vTab = self.EquipmentManagerTab
+
+	if not vTab then
+		return
+	end
+
 	-- Blizzard's tab icons are cut from a sheet that includes the tab's frame and
 	-- some empty margin, so the Icon region is larger than the box drawn around
 	-- it.  Outfitter's icon is a plain square, so it gets its own smaller texture
@@ -1304,12 +1338,29 @@ function Outfitter:UpdateEquipmentManagerTab()
 		vTab.OutfitterIcon:SetPoint("CENTER", vTab.Icon, "CENTER", 0, 0)
 	end
 
-	local vReplace = not self.Settings.Options.DisableEquipmentTab
+	-- Skins which draw the sidebar tabs as text labels (EllesmereUI, for one)
+	-- keep Blizzard's tab seated over the label for its clicks and fade the
+	-- tab's own art out.  There's no box to put an icon in then, so leave the
+	-- tab alone and let the label stand
 
-	vTab.Icon:SetAlpha(vReplace and 0 or 1)
-	vTab.OutfitterIcon:SetShown(vReplace)
+	local vTabArtHidden = vTab.TabBg ~= nil and vTab.TabBg:GetAlpha() == 0
+	local vShowIcon = not self.Settings.Options.DisableEquipmentTab and not vTabArtHidden
 
-	self:SetEmbeddedInSidebar(not self.Settings.Options.DisableEquipmentTab)
+	if vTabArtHidden then
+		-- The skin has faded Blizzard's icon itself, so it mustn't be restored
+		self.EquipmentTabIconAlpha = nil
+	elseif vShowIcon then
+		if not self.EquipmentTabIconAlpha then
+			self.EquipmentTabIconAlpha = vTab.Icon:GetAlpha()
+		end
+
+		vTab.Icon:SetAlpha(0)
+	elseif self.EquipmentTabIconAlpha then
+		vTab.Icon:SetAlpha(self.EquipmentTabIconAlpha)
+		self.EquipmentTabIconAlpha = nil
+	end
+
+	vTab.OutfitterIcon:SetShown(vShowIcon)
 end
 
 function Outfitter:GetEquipmentManagerPane()
@@ -1356,7 +1407,7 @@ function Outfitter:SetEmbeddedInSidebar(pEmbed)
 		self.EmbeddedPosition = nil
 
 		OutfitterFrame:SetParent(vPane)
-		OutfitterFrame:SetFrameLevel(vPane:GetFrameLevel() + 50)
+		self:UpdateEmbeddedFrameLevel()
 		self:SyncEmbeddedPosition()
 		OutfitterFrame:Show()
 
@@ -1397,8 +1448,62 @@ end
 -- may not lead back to a region, which the pane's anchors on Blizzard's side
 -- eventually do.  So copy the pane's position and size onto an anchor against
 -- UIParent instead, and keep it in step from OnUpdate since the pane moves
--- with the character frame.  The frame has the pane's effective scale, so the
--- pane's coordinates can be used as they are
+-- with the character frame.  The frame has the pane's effective scale, so
+-- everything is measured in the pane's units
+
+-- The pane itself isn't always the size of the space it's shown in: UI skins
+-- such as EllesmereUI scale it down into a column of their own and only widen
+-- some of its contents.  So fill the column the pane sits in when one can be
+-- found, keeping the pane's top so anything the skin puts above it stays clear.
+-- The candidates are EllesmereUI's sidebar column and Blizzard's own sidebar
+-- inset, and a candidate only counts if the pane actually starts inside it
+-- (EllesmereUI parks the inset off-screen, for instance)
+
+Outfitter.cSidebarColumnFrames =
+{
+	"EUI_CharSheet_StatsPanel",
+	"EUI_CharSheet_TitlesPanel",
+	"CharacterFrameInsetRight",
+}
+
+-- Returns a frame's edges in the given effective scale's units
+
+function Outfitter:GetScaledRect(pFrame, pScale)
+	local vLeft, vBottom, vWidth, vHeight = pFrame:GetRect()
+
+	if not vLeft or not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
+		return
+	end
+
+	local vRatio = pFrame:GetEffectiveScale() / pScale
+
+	return vLeft * vRatio, (vLeft + vWidth) * vRatio, (vBottom + vHeight) * vRatio, vBottom * vRatio
+end
+
+function Outfitter:GetSidebarRect(pPane)
+	local vScale = pPane:GetEffectiveScale()
+	local vPaneLeft, vPaneRight, vPaneTop, vPaneBottom = self:GetScaledRect(pPane, vScale)
+
+	if not vPaneLeft then
+		return
+	end
+
+	for _, vFrameName in ipairs(self.cSidebarColumnFrames) do
+		local vColumn = _G[vFrameName]
+
+		if vColumn and vColumn.GetRect then
+			local vLeft, vRight, vTop, vBottom = self:GetScaledRect(vColumn, vScale)
+
+			if vLeft
+			and vPaneLeft >= vLeft - 2 and vPaneLeft < vRight
+			and vPaneTop <= vTop + 2 and vPaneTop > vBottom then
+				return vLeft, vRight, vPaneTop, vBottom
+			end
+		end
+	end
+
+	return vPaneLeft, vPaneRight, vPaneTop, vPaneBottom
+end
 
 function Outfitter:SyncEmbeddedPosition()
 	local vPane = self.EmbeddedPane
@@ -1407,10 +1512,15 @@ function Outfitter:SyncEmbeddedPosition()
 		return
 	end
 
-	local vLeft, vTop = vPane:GetLeft(), vPane:GetTop()
-	local vWidth, vHeight = vPane:GetSize()
+	local vLeft, vRight, vTop, vBottom = self:GetSidebarRect(vPane)
 
-	if not vLeft or not vTop or not vWidth or vWidth <= 0 or not vHeight or vHeight <= 0 then
+	if not vLeft then
+		return
+	end
+
+	local vWidth, vHeight = vRight - vLeft, vTop - vBottom
+
+	if vWidth <= 0 or vHeight <= 0 then
 		return
 	end
 
@@ -1429,6 +1539,56 @@ function Outfitter:SyncEmbeddedPosition()
 	OutfitterFrame:ClearAllPoints()
 	OutfitterFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", vLeft, vTop)
 	OutfitterFrame:SetSize(vWidth, vHeight)
+end
+
+-- Blizzard's equipment manager is only faded out, so its rows can still be
+-- clicked and Outfitter has to sit above them.  But only just above: the gear
+-- flyout opened from the character's slots shows over this part of the sheet,
+-- and a level any higher puts Outfitter's list on top of the flyout
+
+function Outfitter:GetHighestFrameLevel(pFrame, pExclude)
+	local vLevel = pFrame:GetFrameLevel()
+
+	for _, vChild in ipairs({pFrame:GetChildren()}) do
+		if vChild ~= pExclude then
+			vLevel = math.max(vLevel, self:GetHighestFrameLevel(vChild, pExclude))
+		end
+	end
+
+	return vLevel
+end
+
+function Outfitter:UpdateEmbeddedFrameLevel()
+	local vPane = self.EmbeddedPane
+
+	if not vPane or InCombatLockdown() then
+		return
+	end
+
+	local vLevel = self:GetHighestFrameLevel(vPane, OutfitterFrame) + 1
+
+	if OutfitterFrame:GetFrameLevel() ~= vLevel then
+		OutfitterFrame:SetFrameLevel(vLevel)
+	end
+end
+
+function Outfitter:RaiseEquipmentFlyout()
+	if not self.EmbeddedPane
+	or not OutfitterFrame:IsVisible()
+	or not EquipmentFlyoutFrame:IsShown()
+	or InCombatLockdown() then
+		return
+	end
+
+	if EquipmentFlyoutFrame:GetFrameStrata() ~= OutfitterFrame:GetFrameStrata() then
+		return
+	end
+
+	local vLevel = self:GetHighestFrameLevel(OutfitterFrame) + 1
+
+	if EquipmentFlyoutFrame:GetFrameLevel() < vLevel then
+		EquipmentFlyoutFrame:SetFrameLevel(vLevel)
+	end
 end
 
 -- Fades Blizzard's equipment manager out from under Outfitter.  Only the alpha
@@ -1607,6 +1767,8 @@ function Outfitter:OnShow()
 
 		C_Timer.After(0, function ()
 			if OutfitterFrame:IsVisible() and not InCombatLockdown() then
+				-- Blizzard builds the pane's rows as it's shown, so check the level again
+				self:UpdateEmbeddedFrameLevel()
 				self:ShowPanel(self.PendingPanel or 3)
 			end
 
