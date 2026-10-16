@@ -1982,7 +1982,7 @@ function Addon.UIElementsLib._DatePicker:Construct(parent, title)
 	-- Year menu
 	self.YearMenu = Addon:New(Addon.UIElementsLib._TitledDropDownMenuButton, self,
 		function (menu)
-			local currentDate = C_Calendar.GetDate()
+			local currentDate = C_DateAndTime.GetCurrentCalendarTime()
 			menu:AddSingleChoiceGroup(nil,
 				{
 					{title = currentDate.year, value = currentDate.year},
