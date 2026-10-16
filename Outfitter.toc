@@ -1,7 +1,7 @@
 ## Interface: 120150 16001
 ## Author: John Stephen
 ## Title: Outfitter
-## Version: 12.1.0.4
+## Version: 12.1.5.0
 ## Notes: Clothing and weapon management and automated equipment changes
 ## OptionalDeps: EllesmereUI
 ## RequiredDeps:
