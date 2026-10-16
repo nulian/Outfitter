@@ -176,6 +176,7 @@ Outfitter.cItemComparisonsOffDescription = "Turn this on to include items from y
 Outfitter.cReplaceEquipmentTab = "Replace equipment manager tab"
 Outfitter.cReplaceEquipmentTabOnDescription = "Turn this off to show Outfitter in its own window beside the character sheet again"
 Outfitter.cReplaceEquipmentTabOffDescription = "Turn this on to show Outfitter in the character sheet in place of the equipment manager"
+Outfitter.cReloadToRemoveSkin = "Reload your UI (/reload) to remove the EllesmereUI skin from Outfitter's window"
 Outfitter.cOutfitDisplay = "Outfit display"
 Outfitter.cShowHotkeyMessages = "Show outfit change messages"
 Outfitter.cShowHotkeyMessagesOnDescription = "Turn this off if you don't want to see a message when you change outfits using a key binding"

@@ -3,7 +3,7 @@
 ## Title: Outfitter
 ## Version: 12.1.0.4
 ## Notes: Clothing and weapon management and automated equipment changes
-## OptionalDeps:
+## OptionalDeps: EllesmereUI
 ## RequiredDeps:
 ## SavedVariablesPerCharacter: gOutfitter_Settings
 ## SavedVariables: gOutfitter_GlobalSettings

@@ -1413,6 +1413,8 @@ function Outfitter:SetEmbeddedInSidebar(pEmbed)
 
 		OutfitterButton:Hide()
 
+		self:SkinWithEllesmere()
+
 		-- Leave the user looking at Outfitter if that's what they were doing
 
 		if vWasOpen then
@@ -1431,6 +1433,10 @@ function Outfitter:SetEmbeddedInSidebar(pEmbed)
 		OutfitterFrame:SetPoint("TOPLEFT", OutfitterButtonFrame, "TOPRIGHT", 0, -30)
 
 		OutfitterButton:Show()
+
+		if self.EllesmereSkin then
+			self:NoteMessage(self.cReloadToRemoveSkin)
+		end
 
 		-- Leave the user looking at Outfitter if that's what they were doing
 
@@ -1659,7 +1665,84 @@ function Outfitter:GetModernScrollBar()
 
 	self.ModernScrollBar = vScrollBar
 
+	if self.EllesmereSkin then
+		self.EllesmereSkin.ScrollBar(vScrollBar)
+	end
+
 	return vScrollBar
+end
+
+----------------------------------------
+-- EllesmereUI skin
+----------------------------------------
+
+-- EllesmereUI has a public skinning API for other addons (see SKINNING_API.md
+-- in EllesmereUI).  The callback only runs when EllesmereUI is installed and
+-- the user hasn't turned skinning off for Outfitter, and its primitives only
+-- fade art and paint their own textures, so they're safe on Outfitter's frames.
+-- Frames Outfitter creates later (the slim scroll bar, extra list rows) are
+-- skinned as they're made, through the S kept here.
+--
+-- Only Outfitter in the sidebar is skinned, to sit with EllesmereUI's skinned
+-- character sheet; the floating window keeps its own look.  The skin is
+-- applied the first time Outfitter goes into the sidebar, and since
+-- EllesmereUI's skins can't be taken off again, leaving the sidebar keeps it
+-- until the UI is reloaded
+
+function Outfitter:ApplyEllesmereSkin(S)
+	self.EllesmereSkinFacade = S
+
+	if self.EmbeddedPane then
+		self:SkinWithEllesmere()
+	end
+end
+
+function Outfitter:SkinWithEllesmere()
+	local S = self.EllesmereSkinFacade
+
+	if not S or self.EllesmereSkin then
+		return
+	end
+
+	self.EllesmereSkin = S
+
+	S.Button(OutfitterNewButton)
+	S.WhiteButtonLabel(OutfitterNewButton)
+
+	for vIndex = 0, self.NumListItems - 1 do
+		self:SkinListItem(_G["OutfitterItem"..vIndex])
+	end
+
+	if self.ModernScrollBar then
+		S.ScrollBar(self.ModernScrollBar)
+	end
+
+	-- The slim bar lines up differently under the skin, so lay out again
+	self:UpdateFrameLayout()
+end
+
+function Outfitter:SkinListItem(pItem)
+	local S = self.EllesmereSkin
+
+	if not S or not pItem then
+		return
+	end
+
+	local vCheckbox = _G[pItem:GetName().."OutfitSelected"]
+
+	-- The checkbox frame is 24px on an 18px row, with the box itself drawn 4px
+	-- in from its edges.  Left on the frame, the border would be 24px tall and
+	-- run into the rows above and below, so keep it on the box
+
+	if vCheckbox then
+		S.Checkbox(vCheckbox, {borderInset = 4})
+	end
+end
+
+if EllesmereUI and EllesmereUI.RegisterSkin then
+	EllesmereUI.RegisterSkin("Outfitter", function (S)
+		Outfitter:ApplyEllesmereSkin(S)
+	end)
 end
 
 -- Line the slim bar up with the one in Blizzard's titles pane, which shares
@@ -1695,6 +1778,30 @@ function Outfitter:GetTitlesScrollBarInset()
 
 	-- Whole pixels, so the comparison on each show doesn't keep finding a change
 	return math.floor(vInset + 0.5)
+end
+
+-- Under EllesmereUI the titles list is EllesmereUI's own, with a 3px strip
+-- whose right edge sits 2px in from the column's, and the skinned slim bar
+-- draws its thumb as a strip down its middle.  So centre the slim bar on the
+-- same line, converted from the column's scale to Outfitter's
+
+function Outfitter:GetEllesmereScrollBarInset(pScrollBar)
+	local vTitlesPanel = _G.EUI_CharSheet_TitlesPanel
+
+	if not self.EllesmereSkin or not vTitlesPanel then
+		return
+	end
+
+	local vRatio = vTitlesPanel:GetEffectiveScale() / OutfitterFrame:GetEffectiveScale()
+	local vStripCentre = (2 + 3 / 2) * vRatio
+
+	return math.floor(vStripCentre - pScrollBar:GetWidth() / 2 + 0.5)
+end
+
+function Outfitter:GetModernScrollBarInset(pScrollBar)
+	return self:GetEllesmereScrollBarInset(pScrollBar)
+	    or self:GetTitlesScrollBarInset()
+	    or self.cModernScrollBarInset
 end
 
 function Outfitter:PositionModernScrollBar()
@@ -1828,6 +1935,8 @@ function Outfitter:CreateListItems(pNumItems)
 		vItem:SetPoint("TOPLEFT", _G["OutfitterItem"..(vIndex - 1)], "BOTTOMLEFT")
 
 		self.NumListItems = vIndex + 1
+
+		self:SkinListItem(vItem)
 	end
 end
 
@@ -1874,7 +1983,7 @@ function Outfitter:UpdateFrameLayout()
 	-- lists, which leaves the rows more room than the classic bar and its trench
 
 	if vModernScrollBar then
-		self.ModernScrollBarInset = self:GetTitlesScrollBarInset() or self.cModernScrollBarInset
+		self.ModernScrollBarInset = self:GetModernScrollBarInset(vModernScrollBar)
 		vRowWidth = vWidth - 1 - vModernScrollBar:GetWidth() - self.ModernScrollBarInset - 4
 	else
 		vRowWidth = vWidth - 32
@@ -2023,7 +2132,7 @@ function Outfitter:OnShow()
 				-- The titles pane may have been laid out since, giving its scroll
 				-- bar a position to line up with
 				if self.ModernScrollBar
-				and (self:GetTitlesScrollBarInset() or self.cModernScrollBarInset) ~= self.ModernScrollBarInset then
+				and self:GetModernScrollBarInset(self.ModernScrollBar) ~= self.ModernScrollBarInset then
 					self:UpdateFrameLayout()
 				end
 				self:ShowPanel(self.PendingPanel or 3)
