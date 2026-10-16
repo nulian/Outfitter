@@ -1284,12 +1284,6 @@ function Outfitter:InstallEquipmentManagerTab()
 		C_Timer.After(0, function () self:UpdateEquipmentTabIcon() end)
 	end)
 
-	OutfitterFrame:HookScript("OnUpdate", function ()
-		if self.EmbeddedPane then
-			self:SyncEmbeddedPosition()
-		end
-	end)
-
 	vTab:HookScript("OnEnter", function ()
 		if not self:IsReplacingEquipmentTab() then
 			return
@@ -1404,11 +1398,11 @@ function Outfitter:SetEmbeddedInSidebar(pEmbed)
 		self:SetPaneContentsShown(vPane, false)
 
 		self.EmbeddedPane = vPane
-		self.EmbeddedPosition = nil
+		self.FramePosition = nil
 
 		OutfitterFrame:SetParent(vPane)
 		self:UpdateEmbeddedFrameLevel()
-		self:SyncEmbeddedPosition()
+		self:SyncFramePosition()
 		OutfitterFrame:Show()
 
 		OutfitterButton:Hide()
@@ -1424,13 +1418,12 @@ function Outfitter:SetEmbeddedInSidebar(pEmbed)
 		self:SetPaneContentsShown(self.EmbeddedPane, true)
 
 		self.EmbeddedPane = nil
-		self.EmbeddedPosition = nil
+		self.FramePosition = nil
 
 		OutfitterFrame:Hide()
 		OutfitterFrame:SetParent(OutfitterButtonFrame)
-		OutfitterFrame:ClearAllPoints()
 		OutfitterFrame:SetSize(self.cFloatingFrameWidth, self.cFloatingFrameHeight)
-		OutfitterFrame:SetPoint("TOPLEFT", OutfitterButtonFrame, "TOPRIGHT", 0, -30)
+		self:SyncFramePosition()
 
 		OutfitterButton:Show()
 
@@ -1511,14 +1504,57 @@ function Outfitter:GetSidebarRect(pPane)
 	return vPaneLeft, vPaneRight, vPaneTop, vPaneBottom
 end
 
-function Outfitter:SyncEmbeddedPosition()
-	local vPane = self.EmbeddedPane
+-- The floating window has the same problem: it sits beside the character
+-- sheet, and character sheet addons re-anchor the sheet itself to their own
+-- artwork (ChonkyCharacterSheet anchors PaperDollFrame to CharacterFrameBg, a
+-- texture), so anchoring the window to the sheet hands the outfit rows' secure
+-- buttons a chain that ends at a region too.  So it's positioned the same way,
+-- just off the top right of the sheet where it's always been
 
-	if not vPane or InCombatLockdown() then
+function Outfitter:GetFloatingFrameRect()
+	local vScale = OutfitterFrame:GetEffectiveScale()
+	local _, vRight, vTop = self:GetScaledRect(OutfitterButtonFrame, vScale)
+
+	if not vRight then
 		return
 	end
 
-	local vLeft, vRight, vTop, vBottom = self:GetSidebarRect(vPane)
+	local vLeft = vRight
+	local vTopEdge = vTop - 30
+
+	return vLeft, vLeft + self.cFloatingFrameWidth, vTopEdge, vTopEdge - self.cFloatingFrameHeight
+end
+
+-- Anchors the window to UIParent wherever it should be, whichever mode it's in
+
+function Outfitter:InstallFramePositioning()
+	OutfitterFrame:HookScript("OnUpdate", function ()
+		self:SyncFramePosition()
+	end)
+
+	-- Take the window off the anchor it was given in the XML straight away, so
+	-- nothing is ever laid out against the character sheet
+
+	self.FramePosition = nil
+
+	if not self:SyncFramePosition() and not InCombatLockdown() then
+		OutfitterFrame:ClearAllPoints()
+		OutfitterFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
+end
+
+function Outfitter:SyncFramePosition()
+	if InCombatLockdown() then
+		return
+	end
+
+	local vLeft, vRight, vTop, vBottom
+
+	if self.EmbeddedPane then
+		vLeft, vRight, vTop, vBottom = self:GetSidebarRect(self.EmbeddedPane)
+	else
+		vLeft, vRight, vTop, vBottom = self:GetFloatingFrameRect()
+	end
 
 	if not vLeft then
 		return
@@ -1530,21 +1566,23 @@ function Outfitter:SyncEmbeddedPosition()
 		return
 	end
 
-	local vPosition = self.EmbeddedPosition
+	local vPosition = self.FramePosition
 
 	if vPosition
 	and vPosition.Left == vLeft
 	and vPosition.Top == vTop
 	and vPosition.Width == vWidth
 	and vPosition.Height == vHeight then
-		return
+		return true
 	end
 
-	self.EmbeddedPosition = {Left = vLeft, Top = vTop, Width = vWidth, Height = vHeight}
+	self.FramePosition = {Left = vLeft, Top = vTop, Width = vWidth, Height = vHeight}
 
 	OutfitterFrame:ClearAllPoints()
 	OutfitterFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", vLeft, vTop)
 	OutfitterFrame:SetSize(vWidth, vHeight)
+
+	return true
 end
 
 -- Blizzard's equipment manager is only faded out, so its rows can still be
@@ -1950,6 +1988,10 @@ function Outfitter:UpdateFrameLayout()
 		return
 	end
 
+	-- Make sure the window is off the character sheet's anchors before any row
+	-- anchors its secure button
+	self:SyncFramePosition()
+
 	local vEmbedded = self.EmbeddedPane ~= nil
 	local vWidth, vHeight, vNumRows
 
@@ -2146,6 +2188,7 @@ function Outfitter:OnShow()
 
 	self.SetFrameLevel(OutfitterFrame, PaperDollFrame:GetFrameLevel() - 1)
 
+	self:SyncFramePosition()
 	self:ShowPanel(3) -- Always switch to the main view when showing the window
 end
 
@@ -6118,6 +6161,9 @@ function Outfitter:Initialize()
 			end
 		end
 	end
+
+	-- Position the window against UIParent rather than the character sheet
+	self:InstallFramePositioning()
 
 	-- Take over Blizzard's equipment manager tab
 	self:InstallEquipmentManagerTab()
